@@ -1,9 +1,70 @@
 """
-Models package (scaffold — full implementation in Week 2-3).
+Models package.
 
-Planned modules:
+Implemented (Week 2):
     backbone.py   -- DeBERTa-v3-base encoder wrapper
-    classifier.py -- Simple classification head (CE / Focal)
+    classifier.py -- Simple classification head (CE)
+
+Planned (Weeks 3-4):
     dann.py       -- Gradient Reversal Layer + domain discriminator
     cdan.py       -- Conditional DANN (class-conditional alignment)
+    focal.py      -- Focal loss variants (used by DANN+Focal / CDAN+Focal)
+
+The public API below uses a lazy ``__getattr__`` so that importing this
+package in environments without ``torch`` / ``transformers`` (e.g. the
+data-only unit tests in ``tests/test_data.py``) does not fail. Only when a
+concrete model symbol is actually referenced do we touch the heavy deps.
 """
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # pragma: no cover
+    from .backbone import (
+        BackboneConfig,
+        BackboneOutput,
+        DebertaBackbone,
+        build_backbone,
+    )
+    from .classifier import (
+        ClassificationHead,
+        EmotionClassifier,
+        EmotionClassifierOutput,
+        build_emotion_classifier,
+    )
+
+
+__all__ = [
+    # backbone
+    "BackboneConfig",
+    "BackboneOutput",
+    "DebertaBackbone",
+    "build_backbone",
+    # classifier
+    "ClassificationHead",
+    "EmotionClassifier",
+    "EmotionClassifierOutput",
+    "build_emotion_classifier",
+]
+
+
+_BACKBONE_EXPORTS = {
+    "BackboneConfig",
+    "BackboneOutput",
+    "DebertaBackbone",
+    "build_backbone",
+}
+_CLASSIFIER_EXPORTS = {
+    "ClassificationHead",
+    "EmotionClassifier",
+    "EmotionClassifierOutput",
+    "build_emotion_classifier",
+}
+
+
+def __getattr__(name):
+    if name in _BACKBONE_EXPORTS:
+        from . import backbone as _bb
+        return getattr(_bb, name)
+    if name in _CLASSIFIER_EXPORTS:
+        from . import classifier as _cl
+        return getattr(_cl, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
