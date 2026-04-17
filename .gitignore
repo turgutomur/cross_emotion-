@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Data (don't commit raw data — too large; keep in .gitignore)
+data/raw/
+data/processed/
+
+# Outputs (models, logs, results — track selectively)
+outputs/checkpoints/
+outputs/logs/
+*.pt
+*.bin
+
+# Notebooks
+.ipynb_checkpoints/
+*.ipynb
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+venv/
+.venv/

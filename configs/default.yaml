@@ -1,0 +1,76 @@
+# ============================================================================
+# Cross-Dataset Emotion Classification — Default Config
+# ============================================================================
+# Usage:
+#   python scripts/sanity_check.py --config configs/default.yaml
+#   python scripts/train.py --config configs/default.yaml --method dann --target goemotions
+
+# --- Data ---
+data:
+  isear_csv: "data/raw/isear.csv"
+  wassa_dir: "data/raw/wassa21/"
+  goemotions_strict_single_ekman: true
+  isear_split_seed: 42
+  isear_train_frac: 0.8
+  isear_val_frac: 0.1
+  min_text_length: 10
+  goemotions_min_text_length: 3
+
+# --- Model ---
+model:
+  backbone: "microsoft/deberta-v3-base"    # main experiments
+  # backbone: "microsoft/deberta-v3-large"  # final validation only
+  num_labels: 6
+  num_domains: 3
+  max_length: 256
+  dropout: 0.1
+
+# --- Training ---
+training:
+  # General
+  epochs: 15
+  batch_size: 16            # T4-friendly; increase to 32 on L4/A100
+  gradient_accumulation: 2  # effective batch = batch_size * grad_accum = 32
+  fp16: true                # mixed precision for speed
+  early_stopping_patience: 3
+  early_stopping_metric: "macro_f1"
+
+  # Optimizer
+  optimizer: "adamw"
+  encoder_lr: 1.0e-5
+  head_lr: 2.0e-5
+  weight_decay: 0.01
+  warmup_ratio: 0.1
+
+  # Seeds (paper standard)
+  seeds: [42, 123, 456]        # 3 for main; extend to 5 for final
+  # seeds_final: [42, 123, 456, 789, 2024]
+
+# --- DANN specific ---
+dann:
+  lambda_max: 1.0
+  annealing: "sigmoid"     # sigmoid ramp from 0 → lambda_max
+  domain_hidden_dim: 256
+
+# --- CDAN specific ---
+cdan:
+  use_random_layer: true   # random projection for feature×class outer product
+  random_dim: 1024
+
+# --- Focal Loss ---
+focal:
+  gamma: 2.0               # standard; ablation: [0, 1, 2, 3, 5]
+  alpha: null               # null = uniform; or per-class weights
+
+# --- Evaluation ---
+evaluation:
+  bootstrap_resamples: 1000
+  bootstrap_seed: 42
+  restrict_to_present: true  # handles ISEAR missing surprise
+
+# --- Logging ---
+logging:
+  level: "INFO"
+  log_dir: "outputs/logs/"
+  checkpoint_dir: "outputs/checkpoints/"
+  results_dir: "outputs/results/"
