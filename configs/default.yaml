@@ -7,8 +7,8 @@
 
 # --- Data ---
 data:
-  isear_csv: "data/raw/isear.csv"
-  wassa_dir: "data/raw/wassa21/"
+  isear_csv: "/content/drive/MyDrive/cross_emotion_data/raw/isear.csv"
+  wassa_dir: "/content/drive/MyDrive/cross_emotion_data/raw/wassa21/"
   goemotions_strict_single_ekman: true
   isear_split_seed: 42
   isear_train_frac: 0.8
