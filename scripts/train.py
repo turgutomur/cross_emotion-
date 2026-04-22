@@ -173,15 +173,41 @@ def write_results_csv(
     rows: List[Dict[str, Any]],
     output_path: Path,
 ) -> None:
+    """Append a per-seed result row to a CSV, creating the file if needed.
+
+    Why append (not overwrite): each invocation of ``train.py`` runs one or
+    more seeds for a single (method, protocol, target) cell of the result
+    matrix. Production runs launch one CLI per seed so the previous seed's
+    row must survive. Header is written only on first creation; subsequent
+    appends reuse the existing header. If a future row introduces new keys
+    (e.g. extra per-domain columns from a LODO run sharing a filename), we
+    keep the original column order — extra keys are dropped from the row
+    rather than corrupting the header. Same-cell runs always share schema,
+    so this is safe in practice.
+    """
     if not rows:
         return
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    fieldnames = list(rows[0].keys())
-    with open(output_path, "w", newline="", encoding="utf-8") as fh:
-        writer = csv.DictWriter(fh, fieldnames=fieldnames)
-        writer.writeheader()
+    file_exists = output_path.exists() and output_path.stat().st_size > 0
+
+    if file_exists:
+        # Reuse the existing header (column order is authoritative).
+        with open(output_path, "r", newline="", encoding="utf-8") as fh:
+            reader = csv.reader(fh)
+            try:
+                fieldnames = next(reader)
+            except StopIteration:
+                fieldnames = list(rows[0].keys())
+                file_exists = False
+    else:
+        fieldnames = list(rows[0].keys())
+
+    with open(output_path, "a", newline="", encoding="utf-8") as fh:
+        writer = csv.DictWriter(fh, fieldnames=fieldnames, extrasaction="ignore")
+        if not file_exists:
+            writer.writeheader()
         writer.writerows(rows)
-    logger.info(f"Results written → {output_path}")
+    logger.info(f"Results appended → {output_path} ({len(rows)} new row(s))")
 
 
 # ---------------------------------------------------------------------------
