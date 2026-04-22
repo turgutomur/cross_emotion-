@@ -1,15 +1,19 @@
 """
-ISEAR loader (Scherer & Wallbott, 1994).
+ISEAR-style loader (Scherer & Wallbott, 1994; permissive for re-distributions).
 
 ISEAR does not come with official train/val/test splits, and is not directly
-available on HuggingFace in a canonical form. We expect the user to place
-the raw ISEAR CSV at `data/raw/isear.csv` (see README) and we perform a
-stratified 80/10/10 split with fixed seed for reproducibility.
+available on HuggingFace in a canonical form. We expect the user to place the
+raw CSV at ``data/raw/isear.csv`` (see README) and we perform a stratified
+80/10/10 split with a fixed seed for reproducibility.
 
-Preprocessing decisions:
-  1. Exclude shame and guilt (contested mapping to sadness).
-  2. Keep 5 Ekman classes: joy, fear, anger, sadness, disgust.
-  3. Note: surprise is NOT present in ISEAR (inherent dataset limitation).
+The loader is deliberately permissive about column names because several
+community re-distributions rename the original ``SIT``/``EMOT`` columns.
+
+Preprocessing decisions (pre-registered — see docs/research_notes.md):
+  1. Exclude ``shame`` and ``guilt`` (contested mapping to sadness).
+  2. Keep the intersection of {joy, fear, anger, sadness, disgust} that
+     actually appears in the supplied file.
+  3. Note: ``surprise`` is NOT present in ISEAR (inherent dataset limitation).
   4. Light whitespace cleaning; drop empty or placeholder texts
      (ISEAR has some "NO RESPONSE" entries).
 """
@@ -48,26 +52,25 @@ def load_isear(
     train_frac: float = 0.8,
     val_frac: float = 0.1,
     min_text_length: int = 10,
-    text_column_candidates: Tuple[str, ...] = ("SIT", "situation", "text", "content"),
-    label_column_candidates: Tuple[str, ...] = ("EMOT", "emotion", "Field1", "label"),
+    text_column_candidates: Tuple[str, ...] = (
+        # Canonical ISEAR names first; then common variants we saw across
+        # Kaggle / GitHub re-distributions of "ISEAR-like" data.
+        "SIT", "situation", "text", "content", "tweet", "sentence", "message",
+    ),
+    label_column_candidates: Tuple[str, ...] = (
+        "EMOT", "emotion", "Field1", "label", "sentiment", "class", "emotions",
+    ),
 ) -> List[EmotionExample]:
-    """
-    Load ISEAR and return a deterministic split.
+    """Load ISEAR and return a deterministic split.
 
-    Args:
-        csv_path: path to the raw ISEAR CSV.
-        split: 'train', 'val', or 'test'.
-        split_seed: fixed seed for the stratified split (reproducibility).
-        train_frac, val_frac: split proportions (test_frac = 1 - train - val).
-        min_text_length: drop short texts (likely placeholders or truncated).
-        text_column_candidates: candidate column names for the situation/text.
-        label_column_candidates: candidate column names for the emotion.
-
-    Returns:
-        List of EmotionExample for the requested split.
-
-    Raises:
-        FileNotFoundError if csv_path does not exist.
+    Rationale for the column-candidate tuples
+    -----------------------------------------
+    Re-distributions we have encountered use at least three header schemes:
+        * Canonical ISEAR:          ``SIT`` / ``EMOT``
+        * Kaggle & GitHub mirrors:  ``text`` / ``emotion``
+        * Twitter-style variants:   ``content`` / ``sentiment``
+    Trying all of them (case-insensitively) here keeps ``configs/default.yaml``
+    untouched when the user swaps one raw file for another.
     """
     csv_path = Path(csv_path)
     if not csv_path.exists():
@@ -79,12 +82,10 @@ def load_isear(
 
     logger.info(f"Loading ISEAR from {csv_path}...")
 
-    # Read raw rows
     rows = _read_isear_csv(csv_path, text_column_candidates, label_column_candidates)
     logger.info(f"ISEAR raw rows: {len(rows)}")
 
-    # Filter + harmonize
-    harmonized: List[Tuple[str, str, str]] = []  # (text, ekman_label, orig_label)
+    harmonized: List[Tuple[str, str, str]] = []
     n_excluded_label = 0
     n_placeholder = 0
     n_short = 0
@@ -107,7 +108,6 @@ def load_isear(
 
         ekman = map_isear(orig_label_lower)
         if ekman is None:
-            # Unknown label, skip
             continue
 
         harmonized.append((text, ekman, orig_label_lower))
@@ -118,7 +118,6 @@ def load_isear(
         f"placeholders={n_placeholder}, short={n_short}"
     )
 
-    # Deterministic stratified split
     train_items, val_items, test_items = _stratified_split(
         harmonized, train_frac=train_frac, val_frac=val_frac, seed=split_seed
     )
@@ -144,9 +143,13 @@ def _read_isear_csv(
     text_cols: Tuple[str, ...],
     label_cols: Tuple[str, ...],
 ) -> List[Tuple[str, str]]:
-    """Read ISEAR CSV, auto-detecting the text and label columns."""
-    with open(path, "r", encoding="utf-8", errors="replace") as f:
-        # ISEAR CSVs use various delimiters depending on source; try to sniff
+    """Read the raw ISEAR CSV, auto-detecting delimiter and header columns.
+
+    ``utf-8-sig`` transparently strips the BOM that some exporters (Excel,
+    certain Kaggle re-distributions) prepend — otherwise the first header
+    becomes ``\\ufeffID`` and column-name matching becomes fragile.
+    """
+    with open(path, "r", encoding="utf-8-sig", errors="replace") as f:
         sample = f.read(4096)
         f.seek(0)
         try:
@@ -172,13 +175,13 @@ def _read_isear_csv(
 
         rows = []
         for row in reader:
-            # Dict keys may have whitespace if sniffer picked odd delimiter
             clean_row = {k.strip() if k else k: v for k, v in row.items()}
             rows.append((clean_row.get(text_col, ""), clean_row.get(label_col, "")))
         return rows
 
 
 def _first_match(candidates: List[str], options: Tuple[str, ...]) -> Optional[str]:
+    """Case-insensitive first-match of ``options`` within ``candidates``."""
     lower_to_orig = {c.lower(): c for c in candidates}
     for opt in options:
         if opt.lower() in lower_to_orig:
@@ -192,7 +195,7 @@ def _stratified_split(
     val_frac: float,
     seed: int,
 ) -> Tuple[List, List, List]:
-    """Stratified split by Ekman label."""
+    """Stratified split by Ekman label with a fixed seed for reproducibility."""
     import random
     from collections import defaultdict
 
@@ -203,7 +206,6 @@ def _stratified_split(
     rng = random.Random(seed)
     train, val, test = [], [], []
     for label, label_items in by_label.items():
-        # Sort for determinism before shuffling with seed
         label_items = sorted(label_items, key=lambda x: x[0])
         rng.shuffle(label_items)
         n = len(label_items)
