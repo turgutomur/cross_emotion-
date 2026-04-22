@@ -178,7 +178,6 @@ class Trainer:
         self.epochs: int = int(train_cfg.get("epochs", 15))
         self.batch_size: int = int(train_cfg.get("batch_size", 16))
         self.grad_accum: int = int(train_cfg.get("gradient_accumulation", 2))
-        self.fp16: bool = bool(train_cfg.get("fp16", False))
         self.patience: int = int(train_cfg.get("early_stopping_patience", 3))
 
         encoder_lr: float = float(train_cfg.get("encoder_lr", 1e-5))
@@ -192,12 +191,20 @@ class Trainer:
         eval_cfg = config.get("evaluation", {})
         self.restrict_to_present: bool = bool(eval_cfg.get("restrict_to_present", True))
 
+        # 1. Move model to device FIRST so optimizer param groups are on device.
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(self.device)
 
+        # AMP is only meaningful on CUDA; disable silently on CPU even if
+        # the config says fp16=true.  Stored as an instance variable so it
+        # is computed once and shared by _train_epoch and evaluate.
+        self.use_amp: bool = bool(train_cfg.get("fp16", False)) and torch.cuda.is_available()
+
+        # 2. Build optimizer AFTER model is on device.
         param_groups = _get_parameter_groups(model, encoder_lr, head_lr, weight_decay)
         self.optimizer = torch.optim.AdamW(param_groups)
 
+        # 3. Build scheduler AFTER optimizer.
         # Steps per epoch is approximate — loader length isn't known until
         # we build it, so we use ceil(n / effective_batch) as an estimate.
         effective_batch = self.batch_size * self.grad_accum
@@ -206,10 +213,17 @@ class Trainer:
         warmup_steps = max(1, int(total_steps * warmup_ratio))
         self.scheduler = _make_linear_warmup_decay(self.optimizer, warmup_steps, total_steps)
 
-        # GradScaler is a no-op when enabled=False; initialised once here
-        # so it is part of the checkpoint if we ever want to resume.
-        use_amp = self.fp16 and torch.cuda.is_available()
-        self.scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
+        # 4. GradScaler is device-agnostic when enabled=False (no-op on CPU).
+        #    Uses the new torch.amp namespace to avoid the deprecation warning.
+        self.scaler = torch.amp.GradScaler("cuda", enabled=self.use_amp)
+
+        # Guard: AMP requires fp32 parameters.  Any .half() / .to(fp16) call
+        # on the model before this point would silently corrupt training.
+        first_param_dtype = next(self.model.parameters()).dtype
+        assert first_param_dtype == torch.float32, (
+            f"Model params must stay fp32 for AMP; got {first_param_dtype}. "
+            "Remove any .half() / .to(torch.float16) calls before constructing the Trainer."
+        )
 
         self.checkpoint_dir = (
             self.output_dir / "checkpoints" / experiment_name / f"seed_{seed}"
@@ -316,13 +330,12 @@ class Trainer:
         total_loss = 0.0
         n_batches = 0
 
-        use_amp = self.fp16 and torch.cuda.is_available()
         for batch in loader:
             batch = {
                 k: v.to(self.device) if isinstance(v, torch.Tensor) else v
                 for k, v in batch.items()
             }
-            with torch.cuda.amp.autocast(enabled=use_amp):
+            with torch.amp.autocast("cuda", enabled=self.use_amp):
                 out = self.model(**batch)
 
             all_preds.append(out.logits.argmax(dim=-1).cpu().numpy())
@@ -396,18 +409,17 @@ class Trainer:
         self.model.train()
         total_loss = 0.0
         update_steps = 0
-        use_amp = self.fp16 and torch.cuda.is_available()
-        self.optimizer.zero_grad()
+        self.optimizer.zero_grad(set_to_none=True)
 
         for micro_step, batch in enumerate(loader):
             batch = {
                 k: v.to(self.device) if isinstance(v, torch.Tensor) else v
                 for k, v in batch.items()
             }
-            with torch.cuda.amp.autocast(enabled=use_amp):
+            with torch.amp.autocast("cuda", enabled=self.use_amp):
                 out = self.model(**batch)
-                # Scale loss before backward so per-micro-step gradients
-                # accumulate to the equivalent of a single full-batch step.
+                # Divide before backward so accumulated gradients equal a
+                # single full-batch gradient at the optimizer step.
                 loss = out.loss / self.grad_accum
 
             self.scaler.scale(loss).backward()
@@ -421,9 +433,10 @@ class Trainer:
                 self.scaler.step(self.optimizer)
                 self.scaler.update()
                 self.scheduler.step()
-                self.optimizer.zero_grad()
+                self.optimizer.zero_grad(set_to_none=True)
 
-                # Accumulate the un-scaled loss for logging
+                # Undo the /grad_accum so the logged value is comparable
+                # regardless of the accumulation setting.
                 total_loss += loss.item() * self.grad_accum
                 update_steps += 1
 
