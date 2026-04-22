@@ -100,6 +100,21 @@ ISEAR_TO_EKMAN: Dict[str, str] = {
 ISEAR_EXCLUDED_LABELS: Set[str] = {"shame", "guilt"}
 ISEAR_MISSING_EKMAN: Set[str] = {"surprise"}  # not present in ISEAR
 
+# Canonical ISEAR numeric codes from the original SPSS distribution (Scherer
+# & Wallbott, 1994). Some community mirrors export EMOT as integers 1-7 and
+# others as string names; we accept both so the pre-registered exclusion of
+# shame (6) and guilt (7) holds regardless of file format, and so that no
+# file-specific special-casing leaks into the loaders.
+ISEAR_NUMERIC_TO_NAME: Dict[str, str] = {
+    "1": "joy",
+    "2": "fear",
+    "3": "anger",
+    "4": "sadness",
+    "5": "disgust",
+    "6": "shame",   # still excluded downstream
+    "7": "guilt",   # still excluded downstream
+}
+
 
 # ============================================================================
 # WASSA-21 → Ekman-6 mapping
@@ -181,10 +196,28 @@ def map_goemotions(
     return None  # unreachable
 
 
+def canonicalize_isear_label(label_name: str) -> str:
+    """Return the canonical lowercase ISEAR label, translating numeric codes.
+
+    Exposed so the loader can run its exclusion check against canonical names
+    (shame/guilt) regardless of whether the source file stores labels as
+    integers (``"6"``/``"7"``) or as strings (``"shame"``/``"guilt"``). Keeps
+    the single-source-of-truth policy intact: no loader owns this knowledge.
+    """
+    s = str(label_name).strip().lower()
+    return ISEAR_NUMERIC_TO_NAME.get(s, s)
+
+
 def map_isear(label_name: str) -> Optional[str]:
-    """Map an ISEAR label to Ekman-6; return None if excluded (shame/guilt)."""
-    label_name = label_name.strip().lower()
-    return ISEAR_TO_EKMAN.get(label_name)
+    """Map an ISEAR label to Ekman-6; return None if excluded (shame/guilt).
+
+    Accepts the canonical string names (joy/fear/anger/sadness/disgust) OR the
+    numeric codes 1-7 from the original ISEAR SPSS distribution that several
+    community mirrors preserve verbatim. Pre-registered exclusions (shame=6,
+    guilt=7) are honored in both representations.
+    """
+    canon = canonicalize_isear_label(label_name)
+    return ISEAR_TO_EKMAN.get(canon)
 
 
 def map_wassa(label_name: str) -> Optional[str]:

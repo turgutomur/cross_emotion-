@@ -23,7 +23,11 @@ import csv
 import logging
 import re
 
-from .ekman_mapping import map_isear, ISEAR_EXCLUDED_LABELS
+from .ekman_mapping import (
+    ISEAR_EXCLUDED_LABELS,
+    canonicalize_isear_label,
+    map_isear,
+)
 from .types import DatasetName, EmotionExample, example_from_record
 
 
@@ -92,9 +96,12 @@ def load_isear(
 
     for text, orig_label in rows:
         text = (text or "").strip()
-        orig_label_lower = (orig_label or "").strip().lower()
+        # Canonicalize here (not in map_isear) so the shame/guilt exclusion
+        # check below sees the same canonical name regardless of whether the
+        # source file uses strings ("shame") or numeric codes ("6").
+        orig_label_canon = canonicalize_isear_label(orig_label or "")
 
-        if orig_label_lower in ISEAR_EXCLUDED_LABELS:
+        if orig_label_canon in ISEAR_EXCLUDED_LABELS:
             n_excluded_label += 1
             continue
 
@@ -106,11 +113,11 @@ def load_isear(
             n_short += 1
             continue
 
-        ekman = map_isear(orig_label_lower)
+        ekman = map_isear(orig_label_canon)
         if ekman is None:
             continue
 
-        harmonized.append((text, ekman, orig_label_lower))
+        harmonized.append((text, ekman, orig_label_canon))
 
     logger.info(
         f"ISEAR harmonized: kept {len(harmonized)}, "
