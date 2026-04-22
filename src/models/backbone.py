@@ -186,7 +186,12 @@ class DebertaBackbone(nn.Module):
         # intentionally NOT overridden here — we keep the pre-training
         # defaults inside the encoder and only add our own head-side
         # dropout on top, matching the DeBERTa fine-tuning recipe.
-        self.encoder = AutoModel.from_pretrained(config.name, config=hf_config)
+        # Explicitly request fp32 so AMP works correctly regardless of the
+        # runtime environment (some Colab/Kaggle setups default to fp16 when
+        # a GPU is present, which breaks GradScaler).
+        self.encoder = AutoModel.from_pretrained(
+            config.name, config=hf_config, torch_dtype=torch.float32
+        )
         self._hidden_size: int = int(hf_config.hidden_size)
 
         if config.pooling not in {"cls", "mean"}:
