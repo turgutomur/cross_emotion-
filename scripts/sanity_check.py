@@ -53,8 +53,8 @@ def parse_args():
     p = argparse.ArgumentParser(description="Data pipeline sanity check")
     p.add_argument("--goemotions-only", action="store_true",
                     help="Only load GoEmotions (no ISEAR/WASSA files needed)")
-    p.add_argument("--isear-csv", type=str, default="data/raw/isear.csv")
-    p.add_argument("--wassa-dir", type=str, default="data/raw/wassa21/")
+    p.add_argument("--isear-csv", type=str, default="/content/drive/MyDrive/cross_emotion_data/raw/isear.csv")
+    p.add_argument("--wassa-dir", type=str, default="/content/drive/MyDrive/cross_emotion_data/raw/wassa21/")
     p.add_argument("--skip-tokenizer", action="store_true",
                     help="Skip tokenizer dry-run (saves time if no GPU)")
     return p.parse_args()

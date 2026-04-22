@@ -232,7 +232,7 @@ def _read_wassa_table(path: Path) -> List[Tuple[str, str]]:
             )
         logger.info(
             f"WASSA columns: text='{text_col}', "
-            f"label={label_col!r if label_col else 'MISSING'}"
+            f"label={repr(label_col) if label_col else 'MISSING'}"
         )
 
         rows: List[Tuple[str, str]] = []
