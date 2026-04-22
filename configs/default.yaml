@@ -71,6 +71,6 @@ evaluation:
 # --- Logging ---
 logging:
   level: "INFO"
-  log_dir: "outputs/logs/"
-  checkpoint_dir: "outputs/checkpoints/"
-  results_dir: "outputs/results/"
+  log_dir: "/content/drive/MyDrive/cross_emotion_data/outputs/logs/"
+  checkpoint_dir: "/content/drive/MyDrive/cross_emotion_data/outputs/checkpoints/"
+  results_dir: "/content/drive/MyDrive/cross_emotion_data/outputs/results/"
