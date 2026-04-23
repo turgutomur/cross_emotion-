@@ -79,28 +79,53 @@ outputs/             Logs, checkpoints, result CSVs (gitignored)
 data/raw/            Raw datasets — gitignored, user-managed
 ```
 
-## Current state (as of 2026-04-20)
+## Current state (as of 2026-04-23)
 
-**Done (Week 1, Apr 14-20):**
-- Data loaders for all three datasets with pre-registered label mapping.
-- `EmotionExample` unified schema, PyTorch dataset + collator.
-- LODO and Mixed protocol builders.
-- Sanity-check script (`scripts/sanity_check.py`).
-- Permissive column detection in ISEAR/WASSA loaders to handle Kaggle
-  re-distributions (sentiment/content columns, BOM, `.csv.tsv` names).
+**Done (Weeks 1-2, Apr 14-23):**
+- Week 1: Data loaders for all three datasets with pre-registered Ekman
+  mapping; `EmotionExample` schema, PyTorch dataset+collator; LODO/Mixed
+  protocol builders; sanity-check script.
+- Week 1 (data quirk): ISEAR loader handles canonical SPSS numeric codes
+  1-7 via `canonicalize_isear_label` in `ekman_mapping.py` — pre-registered
+  exclusion of shame (6) and guilt (7) preserved across formats. WASSA
+  loader accepts `track-1-essay-empathy-train.tsv` filename variants and
+  falls back to stratified split when dev/test missing or unlabeled.
+- Week 2: `src/models/backbone.py` (DeBERTa-v3-base wrapper, fp32-stable
+  for AMP — encoder must NOT be cast to fp16 manually; AMP autocast handles
+  precision, GradScaler unscales fp32 grads). `src/models/classifier.py`
+  (CE head + composite). `src/training/trainer.py` (fp16 AMP, grad-accum 2,
+  early stopping patience=3 on val macro-F1, per-seed CSV append — see
+  `write_results_csv` for the append-with-header-reuse pattern).
 
-**In progress (Week 2, Apr 21-27):**
-- `src/models/backbone.py` — DeBERTa-v3-base encoder wrapper (done).
-- `src/models/classifier.py` — CE classification head + composite model (done).
-- Next up: `src/training/trainer.py` (HF Trainer-compatible loop with fp16,
-  grad-accum 2, early stopping, per-seed runs) and a results CSV writer.
+**Week 2 baseline numbers (CE only, no domain adaptation):**
+- Mixed/mixed, 3 seeds: test_macro_f1 = **0.7102 ± 0.005**
+- LODO target=goemotions, seed 42: test = **0.2977**  (gap from val: 47.5)
+- LODO target=isear,      seed 42: test = **0.5145**  (gap: 19.8)
+- LODO target=wassa21,    seed 42: test = **0.4466**  (gap: 27.9)
+- LODO mean test ≈ **0.42** — about 29 points below Mixed. This is the
+  bar DANN/CDAN must close.
 
-**Planned (Weeks 3-5):**
-- Week 3: DANN (`src/models/dann.py`) + CDAN (`src/models/cdan.py`).
-- Week 4: Focal loss variants, full LODO result matrix.
-- Week 5: DeBERTa-large validation runs, statistical tests, visualisations.
+**In progress (Week 3, Apr 28 - May 4, started early):**
+- `src/models/dann.py` — Gradient Reversal Layer + 3-class domain
+  discriminator with sigmoid lambda annealing.
+- `src/models/cdan.py` — Conditional DANN (class-conditional alignment).
+- `src/training/trainer.py` joint task+domain loss path.
+- Run DANN/CDAN on Mixed (3 seeds) + each LODO target (1 seed first,
+  expand to 3 if promising).
+
+**Planned (Weeks 4-5):**
+- Week 4: Focal loss variants (DANN+Focal, CDAN+Focal), full LODO matrix
+  expanded to 3 seeds per cell.
+- Week 5: DeBERTa-large validation runs (A100), paired bootstrap
+  significance tests, visualisations.
 
 **Paper writing:** Weeks 6-7 (May 19-25).
+
+**Compute path note:** Primary execution is Colab Pro on L4 (~5 min/epoch
+for Mixed, ~2 min/epoch for LODO). Outputs persist to
+`/content/drive/MyDrive/cross_emotion_data/outputs/`. Always pass
+`--output-dir /content/drive/MyDrive/cross_emotion_data/outputs` so CSVs
+land on Drive, not the ephemeral Colab disk.
 
 ## Compute budget
 
