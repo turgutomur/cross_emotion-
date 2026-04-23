@@ -136,11 +136,21 @@ def load_per_domain(cfg: Dict[str, Any], goemotions_only: bool = False):
 # Model factories — rebuilt per seed to start fresh each run
 # ---------------------------------------------------------------------------
 
-def build_model_and_tokenizer(cfg: Dict[str, Any], method: str = "source_only"):
+def build_model_and_tokenizer(
+    cfg: Dict[str, Any],
+    method: str = "source_only",
+    num_train_domains: Optional[int] = None,
+):
     """Return (model, tokenizer) for the requested method.
 
     For source_only / mixed, returns an ``EmotionClassifier``.
     For dann, returns a ``DANNModel`` that shares the same forward contract.
+
+    ``num_train_domains`` must be passed for DANN: it is the number of
+    domains actually present in the training split (2 for LODO, 3 for
+    Mixed).  Using the config default (always 3) in LODO would leave one
+    discriminator output class forever empty, causing the encoder to dump
+    features there and domain_loss to explode.
     """
     backbone_cfg = BackboneConfig.from_dict(cfg.get("model", {}))
     backbone = DebertaBackbone(backbone_cfg)
@@ -149,10 +159,11 @@ def build_model_and_tokenizer(cfg: Dict[str, Any], method: str = "source_only"):
     if method == "dann":
         from src.models.dann import DANNConfig, DANNModel
         dann_cfg = DANNConfig.from_dict(cfg.get("dann", {}))
+        n_domains = num_train_domains if num_train_domains is not None else backbone_cfg.num_domains
         model = DANNModel(
             backbone=backbone,
             num_labels=backbone_cfg.num_labels,
-            num_domains=backbone_cfg.num_domains,
+            num_domains=n_domains,
             head_dropout=backbone_cfg.dropout,
             domain_hidden_dim=dann_cfg.domain_hidden_dim,
         )
@@ -280,13 +291,32 @@ def main() -> int:
     experiment_name = f"{args.method}_{args.protocol}_{target_tag}"
     csv_name = f"{args.method}_{args.protocol}_{target_tag}.csv"
 
+    # For DANN: derive the local domain mapping from the actual train split.
+    # LODO has 2 train domains; Mixed has 3.  The discriminator must be sized
+    # to match so that every output class receives signal and domain_loss stays
+    # near ln(K) instead of exploding toward 10+.
+    if args.method == "dann":
+        unique_domains: List[str] = sorted({e.domain for e in train_examples})
+        num_train_domains: int = len(unique_domains)
+        domain_to_idx: Dict[str, int] = {d: i for i, d in enumerate(unique_domains)}
+        logger.info(
+            f"DANN domain mapping ({num_train_domains} train domains): {domain_to_idx}"
+        )
+    else:
+        num_train_domains = 0  # unused for non-DANN methods
+        domain_to_idx = {}
+
     csv_rows: List[Dict[str, Any]] = []
 
     for seed in seeds:
         logger.info(f"=== Seed {seed} ===")
 
         # Rebuild model from scratch for each seed (no weight carryover).
-        model, tokenizer = build_model_and_tokenizer(cfg, method=args.method)
+        model, tokenizer = build_model_and_tokenizer(
+            cfg,
+            method=args.method,
+            num_train_domains=num_train_domains if args.method == "dann" else None,
+        )
 
         trainer = Trainer(
             model=model,
@@ -298,6 +328,7 @@ def main() -> int:
             output_dir=output_dir,
             seed=seed,
             method=args.method,
+            domain_to_idx=domain_to_idx if args.method == "dann" else None,
         )
 
         train_result = trainer.train()

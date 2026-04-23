@@ -170,6 +170,7 @@ class Trainer:
         output_dir: str | Path = "outputs",
         seed: int = 42,
         method: str = "source_only",
+        domain_to_idx: Optional[Dict[str, int]] = None,
     ) -> None:
         self.model = model
         self.train_examples = train_examples
@@ -233,18 +234,33 @@ class Trainer:
             "Remove any .half() / .to(torch.float16) calls before constructing the Trainer."
         )
 
-        # 5. DANN-specific state: lambda schedule and step counter.
+        # 5. DANN-specific state: lambda schedule, step counter, domain remap.
         #    global_step increments on every optimizer-step attempt so lambda
         #    grows monotonically even when AMP skips an update.
+        #
+        #    domain_remap converts global domain ids (0=goemotions, 1=isear,
+        #    2=wassa21) to local 0..K-1 ids that match the discriminator's
+        #    output size.  In LODO K=2 so without remapping one class is
+        #    forever empty and the encoder exploits that gap, causing
+        #    domain_loss to blow up and task learning to collapse.
         self.global_step: int = 0
         self.current_lambda: float = 0.0
+        self._domain_remap: Optional[torch.Tensor] = None
         if method == "dann":
             from ..models.dann import DANNConfig, SigmoidLambdaScheduler
+            from ..data.types import DATASET2ID
             dann_cfg = DANNConfig.from_dict(config.get("dann", {}))
             self.dann_scheduler: Optional["SigmoidLambdaScheduler"] = SigmoidLambdaScheduler(
                 lambda_max=dann_cfg.lambda_max,
                 gamma=dann_cfg.gamma,
             )
+            if domain_to_idx:
+                # Build a lookup tensor: global_domain_id → local_domain_id.
+                # Shape: (NUM_GLOBAL_DOMAINS,); indexing with a batch tensor is O(1).
+                remap = torch.zeros(len(DATASET2ID), dtype=torch.long)
+                for domain_name, local_idx in domain_to_idx.items():
+                    remap[DATASET2ID[domain_name]] = local_idx
+                self._domain_remap = remap.to(self.device)
         else:
             self.dann_scheduler = None
 
@@ -458,11 +474,16 @@ class Trainer:
 
             # DANN: inject the current lambda_ at the start of each
             # accumulation window so it stays constant within the window.
+            # Also remap domain_labels to local 0..K-1 indices so the
+            # discriminator never sees a "phantom" class that never appears
+            # in the training split (the LODO explosion fix).
             if self.method == "dann":
                 if micro_step % self.grad_accum == 0:
                     p = self.global_step / max(1, self.total_optimizer_steps)
                     self.current_lambda = self.dann_scheduler(p)  # type: ignore[misc]
                 batch["lambda_"] = self.current_lambda
+                if self._domain_remap is not None:
+                    batch["domain_labels"] = self._domain_remap[batch["domain_labels"]]
 
             with torch.amp.autocast("cuda", enabled=self.use_amp):
                 out = self.model(**batch)
