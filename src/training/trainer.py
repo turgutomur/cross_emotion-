@@ -17,6 +17,11 @@ Key design choices
   enabled=False, so the fp16 flag only controls the autocast context.
 * Early stopping patience is on *aggregate* val macro-F1, not per-domain.
   Aggregate is the fairest single signal because domain sizes differ.
+* DANN support: pass ``method="dann"`` to enable gradient reversal.
+  Lambda is updated once per optimizer-step window (constant within a
+  gradient accumulation block) using sigmoid annealing.  ``global_step``
+  increments even when AMP skips the optimizer step so lambda grows
+  monotonically regardless of gradient overflow events.
 """
 from __future__ import annotations
 
@@ -164,6 +169,7 @@ class Trainer:
         experiment_name: str,
         output_dir: str | Path = "outputs",
         seed: int = 42,
+        method: str = "source_only",
     ) -> None:
         self.model = model
         self.train_examples = train_examples
@@ -173,6 +179,7 @@ class Trainer:
         self.experiment_name = experiment_name
         self.output_dir = Path(output_dir)
         self.seed = seed
+        self.method = method
 
         train_cfg = config.get("training", {})
         self.epochs: int = int(train_cfg.get("epochs", 15))
@@ -212,6 +219,7 @@ class Trainer:
         total_steps = self.epochs * steps_per_epoch
         warmup_steps = max(1, int(total_steps * warmup_ratio))
         self.scheduler = _make_linear_warmup_decay(self.optimizer, warmup_steps, total_steps)
+        self.total_optimizer_steps: int = total_steps
 
         # 4. GradScaler is device-agnostic when enabled=False (no-op on CPU).
         #    Uses the new torch.amp namespace to avoid the deprecation warning.
@@ -224,6 +232,21 @@ class Trainer:
             f"Model params must stay fp32 for AMP; got {first_param_dtype}. "
             "Remove any .half() / .to(torch.float16) calls before constructing the Trainer."
         )
+
+        # 5. DANN-specific state: lambda schedule and step counter.
+        #    global_step increments on every optimizer-step attempt so lambda
+        #    grows monotonically even when AMP skips an update.
+        self.global_step: int = 0
+        self.current_lambda: float = 0.0
+        if method == "dann":
+            from ..models.dann import DANNConfig, SigmoidLambdaScheduler
+            dann_cfg = DANNConfig.from_dict(config.get("dann", {}))
+            self.dann_scheduler: Optional["SigmoidLambdaScheduler"] = SigmoidLambdaScheduler(
+                lambda_max=dann_cfg.lambda_max,
+                gamma=dann_cfg.gamma,
+            )
+        else:
+            self.dann_scheduler = None
 
         self.checkpoint_dir = (
             self.output_dir / "checkpoints" / experiment_name / f"seed_{seed}"
@@ -262,7 +285,8 @@ class Trainer:
         best_metrics: Optional[Dict[str, Any]] = None
 
         for epoch in range(1, self.epochs + 1):
-            train_loss = self._train_epoch(train_loader)
+            train_info = self._train_epoch(train_loader)
+            train_loss = train_info["loss"]
             val_metrics = self.evaluate(self.val_examples)
             agg_f1: float = val_metrics["aggregate"].macro_f1
 
@@ -271,9 +295,18 @@ class Trainer:
                 for ds, res in val_metrics.items()
                 if isinstance(res, EvalResult) and ds != "aggregate"
             ]
+            if self.method == "dann":
+                dann_suffix = (
+                    f"  task_loss={train_info['task_loss']:.4f}"
+                    f"  domain_loss={train_info['domain_loss']:.4f}"
+                    f"  lambda={train_info['lambda_now']:.4f}"
+                )
+            else:
+                dann_suffix = ""
             run_logger.info(
                 f"epoch={epoch:02d}  train_loss={train_loss:.4f}  "
                 f"val_macro_f1={agg_f1:.4f}  [{' | '.join(per_ds_parts)}]"
+                f"{dann_suffix}"
             )
 
             if agg_f1 > best_val_f1:
@@ -400,14 +433,20 @@ class Trainer:
             pin_memory=torch.cuda.is_available(),
         )
 
-    def _train_epoch(self, loader: DataLoader) -> float:
+    def _train_epoch(self, loader: DataLoader) -> Dict[str, Any]:
         """One epoch of training with gradient accumulation and fp16.
 
-        Returns mean loss per gradient-update step (not per micro-step),
-        so the logged value is comparable regardless of grad_accum setting.
+        Returns a dict with at minimum ``{"loss": float}``.  For
+        ``method="dann"`` it also contains ``task_loss``, ``domain_loss``,
+        and ``lambda_now`` so the caller can log them separately.
+
+        Loss values are means per gradient-update step (not per micro-step),
+        so they are comparable regardless of the grad_accum setting.
         """
         self.model.train()
         total_loss = 0.0
+        total_task_loss = 0.0
+        total_domain_loss = 0.0
         update_steps = 0
         self.optimizer.zero_grad(set_to_none=True)
 
@@ -416,6 +455,15 @@ class Trainer:
                 k: v.to(self.device) if isinstance(v, torch.Tensor) else v
                 for k, v in batch.items()
             }
+
+            # DANN: inject the current lambda_ at the start of each
+            # accumulation window so it stays constant within the window.
+            if self.method == "dann":
+                if micro_step % self.grad_accum == 0:
+                    p = self.global_step / max(1, self.total_optimizer_steps)
+                    self.current_lambda = self.dann_scheduler(p)  # type: ignore[misc]
+                batch["lambda_"] = self.current_lambda
+
             with torch.amp.autocast("cuda", enabled=self.use_amp):
                 out = self.model(**batch)
                 # Divide before backward so accumulated gradients equal a
@@ -440,7 +488,21 @@ class Trainer:
                 total_loss += loss.item() * self.grad_accum
                 update_steps += 1
 
-        return total_loss / max(update_steps, 1)
+                if self.method == "dann":
+                    # global_step always increments, even when AMP skipped
+                    # the optimizer step, so lambda grows monotonically.
+                    self.global_step += 1
+                    if out.task_loss is not None:
+                        total_task_loss += out.task_loss.item()
+                    if out.domain_loss is not None:
+                        total_domain_loss += out.domain_loss.item()
+
+        result: Dict[str, Any] = {"loss": total_loss / max(update_steps, 1)}
+        if self.method == "dann":
+            result["task_loss"] = total_task_loss / max(update_steps, 1)
+            result["domain_loss"] = total_domain_loss / max(update_steps, 1)
+            result["lambda_now"] = self.current_lambda
+        return result
 
     def _save_checkpoint(self, epoch: int, val_macro_f1: float) -> None:
         checkpoint = {

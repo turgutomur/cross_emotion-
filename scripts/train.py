@@ -35,6 +35,7 @@ from src.data.protocols import build_mixed_protocol, build_lodo_protocol
 from src.data.types import EmotionExample
 from src.models.backbone import BackboneConfig, DebertaBackbone
 from src.models.classifier import EmotionClassifier
+from src.models.dann import build_dann_model
 from src.training.trainer import Trainer
 from src.utils.logging_utils import setup_logging
 
@@ -64,11 +65,11 @@ def parse_args() -> argparse.Namespace:
         help="Target domain for LODO protocol.  Required when --protocol=lodo.",
     )
     p.add_argument(
-        "--method", choices=["source_only", "mixed"], required=True,
+        "--method", choices=["source_only", "mixed", "dann"], required=True,
         help=(
             "source_only: standard CE, no domain adaptation. "
-            "mixed: same model but trained on pooled mixed data. "
-            "(DANN/CDAN are added in Week 3.)"
+            "mixed: same model trained on pooled mixed data. "
+            "dann: domain-adversarial training with gradient reversal."
         ),
     )
     p.add_argument(
@@ -132,18 +133,35 @@ def load_per_domain(cfg: Dict[str, Any], goemotions_only: bool = False):
 
 
 # ---------------------------------------------------------------------------
-# Model factory — rebuilt per seed to start fresh each run
+# Model factories — rebuilt per seed to start fresh each run
 # ---------------------------------------------------------------------------
 
-def build_model_and_tokenizer(cfg: Dict[str, Any]):
+def build_model_and_tokenizer(cfg: Dict[str, Any], method: str = "source_only"):
+    """Return (model, tokenizer) for the requested method.
+
+    For source_only / mixed, returns an ``EmotionClassifier``.
+    For dann, returns a ``DANNModel`` that shares the same forward contract.
+    """
     backbone_cfg = BackboneConfig.from_dict(cfg.get("model", {}))
     backbone = DebertaBackbone(backbone_cfg)
     tokenizer = backbone.get_tokenizer()
-    model = EmotionClassifier(
-        backbone=backbone,
-        num_labels=backbone_cfg.num_labels,
-        head_dropout=backbone_cfg.dropout,
-    )
+
+    if method == "dann":
+        from src.models.dann import DANNConfig, DANNModel
+        dann_cfg = DANNConfig.from_dict(cfg.get("dann", {}))
+        model = DANNModel(
+            backbone=backbone,
+            num_labels=backbone_cfg.num_labels,
+            num_domains=backbone_cfg.num_domains,
+            head_dropout=backbone_cfg.dropout,
+            domain_hidden_dim=dann_cfg.domain_hidden_dim,
+        )
+    else:
+        model = EmotionClassifier(
+            backbone=backbone,
+            num_labels=backbone_cfg.num_labels,
+            head_dropout=backbone_cfg.dropout,
+        )
     return model, tokenizer
 
 
@@ -268,7 +286,7 @@ def main() -> int:
         logger.info(f"=== Seed {seed} ===")
 
         # Rebuild model from scratch for each seed (no weight carryover).
-        model, tokenizer = build_model_and_tokenizer(cfg)
+        model, tokenizer = build_model_and_tokenizer(cfg, method=args.method)
 
         trainer = Trainer(
             model=model,
@@ -279,6 +297,7 @@ def main() -> int:
             experiment_name=experiment_name,
             output_dir=output_dir,
             seed=seed,
+            method=args.method,
         )
 
         train_result = trainer.train()
