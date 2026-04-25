@@ -48,7 +48,7 @@ training:
 
 # --- DANN specific ---
 dann:
-  lambda_max: 1.0
+  lambda_max: 0.5
   annealing: "sigmoid"     # sigmoid ramp from 0 → lambda_max
   domain_hidden_dim: 256
 
