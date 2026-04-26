@@ -54,8 +54,13 @@ dann:
 
 # --- CDAN specific ---
 cdan:
-  use_random_layer: true   # random projection for feature×class outer product
-  random_dim: 1024
+  lambda_max: 0.5
+  annealing: "sigmoid"
+  domain_hidden_dim: 256
+  use_random_projection: true   # random projection trick (Long et al. 2018, §3.2)
+  projection_dim: 1024
+  entropy_weighting: false      # set true for CDAN+E (§3.3)
+  gamma: 10.0
 
 # --- Focal Loss ---
 focal:

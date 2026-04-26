@@ -65,11 +65,12 @@ def parse_args() -> argparse.Namespace:
         help="Target domain for LODO protocol.  Required when --protocol=lodo.",
     )
     p.add_argument(
-        "--method", choices=["source_only", "mixed", "dann"], required=True,
+        "--method", choices=["source_only", "mixed", "dann", "cdan"], required=True,
         help=(
             "source_only: standard CE, no domain adaptation. "
             "mixed: same model trained on pooled mixed data. "
-            "dann: domain-adversarial training with gradient reversal."
+            "dann: domain-adversarial training with gradient reversal. "
+            "cdan: conditional DANN with class-conditional multilinear map."
         ),
     )
     p.add_argument(
@@ -166,6 +167,20 @@ def build_model_and_tokenizer(
             num_domains=n_domains,
             head_dropout=backbone_cfg.dropout,
             domain_hidden_dim=dann_cfg.domain_hidden_dim,
+        )
+    elif method == "cdan":
+        from src.models.cdan import CDANConfig, CDANModel
+        cdan_cfg = CDANConfig.from_dict(cfg.get("cdan", {}))
+        n_domains = num_train_domains if num_train_domains is not None else backbone_cfg.num_domains
+        model = CDANModel(
+            backbone=backbone,
+            num_labels=backbone_cfg.num_labels,
+            num_domains=n_domains,
+            head_dropout=backbone_cfg.dropout,
+            domain_hidden_dim=cdan_cfg.domain_hidden_dim,
+            use_random_projection=cdan_cfg.use_random_projection,
+            projection_dim=cdan_cfg.projection_dim,
+            entropy_weighting=cdan_cfg.entropy_weighting,
         )
     else:
         model = EmotionClassifier(
@@ -295,15 +310,15 @@ def main() -> int:
     # LODO has 2 train domains; Mixed has 3.  The discriminator must be sized
     # to match so that every output class receives signal and domain_loss stays
     # near ln(K) instead of exploding toward 10+.
-    if args.method == "dann":
+    if args.method in ("dann", "cdan"):
         unique_domains: List[str] = sorted({e.domain for e in train_examples})
         num_train_domains: int = len(unique_domains)
         domain_to_idx: Dict[str, int] = {d: i for i, d in enumerate(unique_domains)}
         logger.info(
-            f"DANN domain mapping ({num_train_domains} train domains): {domain_to_idx}"
+            f"{args.method.upper()} domain mapping ({num_train_domains} train domains): {domain_to_idx}"
         )
     else:
-        num_train_domains = 0  # unused for non-DANN methods
+        num_train_domains = 0  # unused for non-adversarial methods
         domain_to_idx = {}
 
     csv_rows: List[Dict[str, Any]] = []
@@ -315,7 +330,7 @@ def main() -> int:
         model, tokenizer = build_model_and_tokenizer(
             cfg,
             method=args.method,
-            num_train_domains=num_train_domains if args.method == "dann" else None,
+            num_train_domains=num_train_domains if args.method in ("dann", "cdan") else None,
         )
 
         trainer = Trainer(
@@ -328,7 +343,7 @@ def main() -> int:
             output_dir=output_dir,
             seed=seed,
             method=args.method,
-            domain_to_idx=domain_to_idx if args.method == "dann" else None,
+            domain_to_idx=domain_to_idx if args.method in ("dann", "cdan") else None,
         )
 
         train_result = trainer.train()

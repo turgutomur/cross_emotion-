@@ -30,6 +30,21 @@ if TYPE_CHECKING:  # pragma: no cover
         EmotionClassifierOutput,
         build_emotion_classifier,
     )
+    from .dann import (
+        DANNConfig,
+        DANNModel,
+        DANNOutput,
+        DomainDiscriminator,
+        SigmoidLambdaScheduler,
+        build_dann_model,
+    )
+    from .cdan import (
+        CDANConfig,
+        CDANModel,
+        CDANOutput,
+        ConditionalDiscriminator,
+        build_cdan_model,
+    )
 
 
 __all__ = [
@@ -43,6 +58,19 @@ __all__ = [
     "EmotionClassifier",
     "EmotionClassifierOutput",
     "build_emotion_classifier",
+    # dann
+    "DANNConfig",
+    "DANNModel",
+    "DANNOutput",
+    "DomainDiscriminator",
+    "SigmoidLambdaScheduler",
+    "build_dann_model",
+    # cdan
+    "CDANConfig",
+    "CDANModel",
+    "CDANOutput",
+    "ConditionalDiscriminator",
+    "build_cdan_model",
 ]
 
 
@@ -58,6 +86,21 @@ _CLASSIFIER_EXPORTS = {
     "EmotionClassifierOutput",
     "build_emotion_classifier",
 }
+_DANN_EXPORTS = {
+    "DANNConfig",
+    "DANNModel",
+    "DANNOutput",
+    "DomainDiscriminator",
+    "SigmoidLambdaScheduler",
+    "build_dann_model",
+}
+_CDAN_EXPORTS = {
+    "CDANConfig",
+    "CDANModel",
+    "CDANOutput",
+    "ConditionalDiscriminator",
+    "build_cdan_model",
+}
 
 
 def __getattr__(name):
@@ -67,4 +110,10 @@ def __getattr__(name):
     if name in _CLASSIFIER_EXPORTS:
         from . import classifier as _cl
         return getattr(_cl, name)
+    if name in _DANN_EXPORTS:
+        from . import dann as _dann
+        return getattr(_dann, name)
+    if name in _CDAN_EXPORTS:
+        from . import cdan as _cdan
+        return getattr(_cdan, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -246,13 +246,18 @@ class Trainer:
         self.global_step: int = 0
         self.current_lambda: float = 0.0
         self._domain_remap: Optional[torch.Tensor] = None
-        if method == "dann":
-            from ..models.dann import DANNConfig, SigmoidLambdaScheduler
+        if method in ("dann", "cdan"):
+            from ..models.dann import SigmoidLambdaScheduler
             from ..data.types import DATASET2ID
-            dann_cfg = DANNConfig.from_dict(config.get("dann", {}))
+            if method == "dann":
+                from ..models.dann import DANNConfig
+                _mcfg = DANNConfig.from_dict(config.get("dann", {}))
+            else:
+                from ..models.cdan import CDANConfig
+                _mcfg = CDANConfig.from_dict(config.get("cdan", {}))
             self.dann_scheduler: Optional["SigmoidLambdaScheduler"] = SigmoidLambdaScheduler(
-                lambda_max=dann_cfg.lambda_max,
-                gamma=dann_cfg.gamma,
+                lambda_max=_mcfg.lambda_max,
+                gamma=_mcfg.gamma,
             )
             if domain_to_idx:
                 # Build a lookup tensor: global_domain_id → local_domain_id.
@@ -311,7 +316,7 @@ class Trainer:
                 for ds, res in val_metrics.items()
                 if isinstance(res, EvalResult) and ds != "aggregate"
             ]
-            if self.method == "dann":
+            if self.method in ("dann", "cdan"):
                 dann_suffix = (
                     f"  task_loss={train_info['task_loss']:.4f}"
                     f"  domain_loss={train_info['domain_loss']:.4f}"
@@ -477,7 +482,7 @@ class Trainer:
             # Also remap domain_labels to local 0..K-1 indices so the
             # discriminator never sees a "phantom" class that never appears
             # in the training split (the LODO explosion fix).
-            if self.method == "dann":
+            if self.method in ("dann", "cdan"):
                 if micro_step % self.grad_accum == 0:
                     p = self.global_step / max(1, self.total_optimizer_steps)
                     self.current_lambda = self.dann_scheduler(p)  # type: ignore[misc]
@@ -509,7 +514,7 @@ class Trainer:
                 total_loss += loss.item() * self.grad_accum
                 update_steps += 1
 
-                if self.method == "dann":
+                if self.method in ("dann", "cdan"):
                     # global_step always increments, even when AMP skipped
                     # the optimizer step, so lambda grows monotonically.
                     self.global_step += 1
@@ -519,7 +524,7 @@ class Trainer:
                         total_domain_loss += out.domain_loss.item()
 
         result: Dict[str, Any] = {"loss": total_loss / max(update_steps, 1)}
-        if self.method == "dann":
+        if self.method in ("dann", "cdan"):
             result["task_loss"] = total_task_loss / max(update_steps, 1)
             result["domain_loss"] = total_domain_loss / max(update_steps, 1)
             result["lambda_now"] = self.current_lambda
