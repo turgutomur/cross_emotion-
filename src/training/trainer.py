@@ -243,13 +243,19 @@ class Trainer:
         #    output size.  In LODO K=2 so without remapping one class is
         #    forever empty and the encoder exploits that gap, causing
         #    domain_loss to blow up and task learning to collapse.
+        #
+        #    "dann_focal" and "cdan_focal" are adversarial methods that share
+        #    the same lambda schedule and domain-remap logic as their non-focal
+        #    twins; the only difference is the task loss function injected at
+        #    model construction time (handled in train.py).
+        _ADVERSARIAL_METHODS = ("dann", "cdan", "dann_focal", "cdan_focal")
         self.global_step: int = 0
         self.current_lambda: float = 0.0
         self._domain_remap: Optional[torch.Tensor] = None
-        if method in ("dann", "cdan"):
+        if method in _ADVERSARIAL_METHODS:
             from ..models.dann import SigmoidLambdaScheduler
             from ..data.types import DATASET2ID
-            if method == "dann":
+            if method in ("dann", "dann_focal"):
                 from ..models.dann import DANNConfig
                 _mcfg = DANNConfig.from_dict(config.get("dann", {}))
             else:
@@ -298,6 +304,17 @@ class Trainer:
         )
 
         set_seed(self.seed)
+
+        # Focal-loss banner: logged once per run so log forensics can confirm
+        # which alpha mode and gamma were active without inspecting the config.
+        if self.method.endswith("_focal"):
+            focal_cfg = self.cfg.get("focal", {})
+            _gamma = focal_cfg.get("gamma", 2.0)
+            _alpha_mode = focal_cfg.get("alpha", "inverse_frequency")
+            run_logger.info(
+                f"Using focal loss (gamma={_gamma}, alpha={_alpha_mode})"
+            )
+
         train_loader = self._make_dataloader(self.train_examples, shuffle=True)
 
         best_val_f1 = -1.0
@@ -316,7 +333,7 @@ class Trainer:
                 for ds, res in val_metrics.items()
                 if isinstance(res, EvalResult) and ds != "aggregate"
             ]
-            if self.method in ("dann", "cdan"):
+            if self.method in ("dann", "cdan", "dann_focal", "cdan_focal"):
                 dann_suffix = (
                     f"  task_loss={train_info['task_loss']:.4f}"
                     f"  domain_loss={train_info['domain_loss']:.4f}"
@@ -477,12 +494,12 @@ class Trainer:
                 for k, v in batch.items()
             }
 
-            # DANN: inject the current lambda_ at the start of each
-            # accumulation window so it stays constant within the window.
+            # Adversarial methods: inject the current lambda_ at the start of
+            # each accumulation window so it stays constant within the window.
             # Also remap domain_labels to local 0..K-1 indices so the
             # discriminator never sees a "phantom" class that never appears
             # in the training split (the LODO explosion fix).
-            if self.method in ("dann", "cdan"):
+            if self.method in ("dann", "cdan", "dann_focal", "cdan_focal"):
                 if micro_step % self.grad_accum == 0:
                     p = self.global_step / max(1, self.total_optimizer_steps)
                     self.current_lambda = self.dann_scheduler(p)  # type: ignore[misc]
@@ -514,7 +531,7 @@ class Trainer:
                 total_loss += loss.item() * self.grad_accum
                 update_steps += 1
 
-                if self.method in ("dann", "cdan"):
+                if self.method in ("dann", "cdan", "dann_focal", "cdan_focal"):
                     # global_step always increments, even when AMP skipped
                     # the optimizer step, so lambda grows monotonically.
                     self.global_step += 1
@@ -524,7 +541,7 @@ class Trainer:
                         total_domain_loss += out.domain_loss.item()
 
         result: Dict[str, Any] = {"loss": total_loss / max(update_steps, 1)}
-        if self.method in ("dann", "cdan"):
+        if self.method in ("dann", "cdan", "dann_focal", "cdan_focal"):
             result["task_loss"] = total_task_loss / max(update_steps, 1)
             result["domain_loss"] = total_domain_loss / max(update_steps, 1)
             result["lambda_now"] = self.current_lambda

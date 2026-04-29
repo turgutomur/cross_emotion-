@@ -351,7 +351,21 @@ class CDANModel(nn.Module):
         use_random_projection: bool = True,
         projection_dim: int = 1024,
         entropy_weighting: bool = False,
+        task_loss_fn: Optional[nn.Module] = None,
     ):
+        """Initialise CDAN components.
+
+        Parameters
+        ----------
+        task_loss_fn:
+            Loss function for the Ekman emotion task.  Defaults to
+            ``nn.CrossEntropyLoss`` (mean reduction), preserving backward
+            compatibility with all Week 3 results.  Pass a ``FocalLoss``
+            instance to enable the cdan_focal method without subclassing.
+            The conditional discriminator always uses plain CE (optionally
+            entropy-weighted for CDAN+E): domain labels are balanced by
+            construction in LODO, so focal modulation is unnecessary there.
+        """
         super().__init__()
         self.backbone = backbone
         self.num_labels = num_labels
@@ -373,7 +387,10 @@ class CDANModel(nn.Module):
             projection_dim=projection_dim,
         )
 
-        self._task_loss_fn = nn.CrossEntropyLoss(reduction="mean")
+        self._task_loss_fn: nn.Module = (
+            task_loss_fn if task_loss_fn is not None
+            else nn.CrossEntropyLoss(reduction="mean")
+        )
 
     def forward(
         self,
@@ -466,6 +483,7 @@ class CDANModel(nn.Module):
 def build_cdan_model(
     backbone_config: Union[BackboneConfig, Mapping[str, Any], str, Path],
     cdan_config: Union[CDANConfig, Mapping[str, Any], None] = None,
+    task_loss_fn: Optional[nn.Module] = None,
 ) -> CDANModel:
     """Build a ``CDANModel`` from backbone and CDAN configs.
 
@@ -502,6 +520,7 @@ def build_cdan_model(
         use_random_projection=ccfg.use_random_projection,
         projection_dim=ccfg.projection_dim,
         entropy_weighting=ccfg.entropy_weighting,
+        task_loss_fn=task_loss_fn,
     )
 
 

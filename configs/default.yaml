@@ -64,8 +64,10 @@ cdan:
 
 # --- Focal Loss ---
 focal:
-  gamma: 2.0               # standard; ablation: [0, 1, 2, 3, 5]
-  alpha: null               # null = uniform; or per-class weights
+  gamma: 2.0                     # focusing parameter, Lin et al. 2017 default
+  alpha: "inverse_frequency"     # one of: "inverse_frequency", "uniform", "off"
+                                 # "off" disables alpha (focal-only, useful for ablations)
+  reduction: "mean"
 
 # --- Evaluation ---
 evaluation:

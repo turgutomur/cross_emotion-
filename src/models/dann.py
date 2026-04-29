@@ -284,7 +284,22 @@ class DANNModel(nn.Module):
         num_domains: int = 3,
         head_dropout: float = 0.1,
         domain_hidden_dim: int = 256,
+        task_loss_fn: Optional[nn.Module] = None,
     ):
+        """Initialise DANN components.
+
+        Parameters
+        ----------
+        task_loss_fn:
+            Loss function for the Ekman emotion task.  Defaults to
+            ``nn.CrossEntropyLoss`` (mean reduction), which preserves full
+            backward compatibility with all Week 2/3 results.  Pass a
+            ``FocalLoss`` instance to enable the dann_focal method without
+            subclassing.  The domain discriminator always uses plain CE
+            regardless of this argument: domain labels are balanced by
+            construction in our LODO setup, so focal modulation there is
+            both unnecessary and potentially destabilising.
+        """
         super().__init__()
         self.backbone = backbone
         self.num_labels = num_labels
@@ -302,7 +317,10 @@ class DANNModel(nn.Module):
             dropout=head_dropout,
         )
 
-        self._task_loss_fn = nn.CrossEntropyLoss(reduction="mean")
+        self._task_loss_fn: nn.Module = (
+            task_loss_fn if task_loss_fn is not None
+            else nn.CrossEntropyLoss(reduction="mean")
+        )
         self._domain_loss_fn = nn.CrossEntropyLoss(reduction="mean")
 
     def forward(
@@ -413,6 +431,7 @@ class SigmoidLambdaScheduler:
 def build_dann_model(
     backbone_config: Union[BackboneConfig, Mapping[str, Any], str, Path],
     dann_config: Union[DANNConfig, Mapping[str, Any], None] = None,
+    task_loss_fn: Optional[nn.Module] = None,
 ) -> DANNModel:
     """Build a ``DANNModel`` from backbone and DANN configs.
 
@@ -446,6 +465,7 @@ def build_dann_model(
         num_domains=bcfg.num_domains,
         head_dropout=bcfg.dropout,
         domain_hidden_dim=dcfg.domain_hidden_dim,
+        task_loss_fn=task_loss_fn,
     )
 
 

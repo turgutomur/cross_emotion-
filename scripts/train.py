@@ -25,6 +25,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import torch
 import yaml
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -65,12 +66,18 @@ def parse_args() -> argparse.Namespace:
         help="Target domain for LODO protocol.  Required when --protocol=lodo.",
     )
     p.add_argument(
-        "--method", choices=["source_only", "mixed", "dann", "cdan"], required=True,
+        "--method",
+        choices=[
+            "source_only", "mixed", "dann", "cdan",
+            "source_only_focal", "mixed_focal", "dann_focal", "cdan_focal",
+        ],
+        required=True,
         help=(
-            "source_only: standard CE, no domain adaptation. "
-            "mixed: same model trained on pooled mixed data. "
+            "source_only / mixed: standard CE, no domain adaptation. "
             "dann: domain-adversarial training with gradient reversal. "
-            "cdan: conditional DANN with class-conditional multilinear map."
+            "cdan: conditional DANN with class-conditional multilinear map. "
+            "*_focal variants: same as their non-focal twins but with focal loss "
+            "(gamma and alpha from the focal: block in the YAML config)."
         ),
     )
     p.add_argument(
@@ -137,27 +144,73 @@ def load_per_domain(cfg: Dict[str, Any], goemotions_only: bool = False):
 # Model factories — rebuilt per seed to start fresh each run
 # ---------------------------------------------------------------------------
 
+def _build_focal_loss(
+    cfg: Dict[str, Any],
+    train_examples: List[EmotionExample],
+    num_classes: int = 6,
+) -> "torch.nn.Module":
+    """Construct a FocalLoss from the focal: YAML block and training data.
+
+    Alpha is computed only from train_examples (no val/test leakage).
+    Called only when the method ends with "_focal".
+    """
+    from src.training.losses import FocalLoss, compute_inverse_frequency_alpha
+
+    focal_cfg = cfg.get("focal", {})
+    gamma = float(focal_cfg.get("gamma", 2.0))
+    alpha_mode = str(focal_cfg.get("alpha", "inverse_frequency"))
+    reduction = str(focal_cfg.get("reduction", "mean"))
+
+    if alpha_mode == "inverse_frequency":
+        alpha = compute_inverse_frequency_alpha(train_examples, num_classes=num_classes)
+    elif alpha_mode == "uniform":
+        alpha = torch.ones(num_classes)
+    elif alpha_mode == "off":
+        alpha = None
+    else:
+        raise ValueError(
+            f"Unknown focal alpha mode: {alpha_mode!r}. "
+            "Expected one of: 'inverse_frequency', 'uniform', 'off'."
+        )
+
+    return FocalLoss(gamma=gamma, alpha=alpha, reduction=reduction)
+
+
 def build_model_and_tokenizer(
     cfg: Dict[str, Any],
     method: str = "source_only",
     num_train_domains: Optional[int] = None,
+    train_examples: Optional[List[EmotionExample]] = None,
 ):
     """Return (model, tokenizer) for the requested method.
 
-    For source_only / mixed, returns an ``EmotionClassifier``.
-    For dann, returns a ``DANNModel`` that shares the same forward contract.
+    For source_only / mixed variants (CE or focal), returns an
+    ``EmotionClassifier``.  For dann / cdan variants, returns a
+    ``DANNModel`` / ``CDANModel`` that shares the same forward contract.
 
-    ``num_train_domains`` must be passed for DANN: it is the number of
-    domains actually present in the training split (2 for LODO, 3 for
-    Mixed).  Using the config default (always 3) in LODO would leave one
-    discriminator output class forever empty, causing the encoder to dump
-    features there and domain_loss to explode.
+    ``num_train_domains`` must be passed for adversarial methods: it is the
+    number of domains actually present in the training split (2 for LODO, 3
+    for Mixed).  Using the config default (always 3) in LODO would leave one
+    discriminator output class forever empty.
+
+    ``train_examples`` must be passed for *_focal methods so that
+    inverse-frequency alpha can be computed without test-set leakage.
     """
     backbone_cfg = BackboneConfig.from_dict(cfg.get("model", {}))
     backbone = DebertaBackbone(backbone_cfg)
     tokenizer = backbone.get_tokenizer()
 
-    if method == "dann":
+    # Build focal loss up-front when needed; None for non-focal methods.
+    task_loss_fn = None
+    if method.endswith("_focal"):
+        if train_examples is None:
+            raise ValueError(
+                "train_examples must be provided for focal methods "
+                "(required to compute inverse-frequency alpha)."
+            )
+        task_loss_fn = _build_focal_loss(cfg, train_examples, num_classes=backbone_cfg.num_labels)
+
+    if method in ("dann", "dann_focal"):
         from src.models.dann import DANNConfig, DANNModel
         dann_cfg = DANNConfig.from_dict(cfg.get("dann", {}))
         n_domains = num_train_domains if num_train_domains is not None else backbone_cfg.num_domains
@@ -167,8 +220,9 @@ def build_model_and_tokenizer(
             num_domains=n_domains,
             head_dropout=backbone_cfg.dropout,
             domain_hidden_dim=dann_cfg.domain_hidden_dim,
+            task_loss_fn=task_loss_fn,
         )
-    elif method == "cdan":
+    elif method in ("cdan", "cdan_focal"):
         from src.models.cdan import CDANConfig, CDANModel
         cdan_cfg = CDANConfig.from_dict(cfg.get("cdan", {}))
         n_domains = num_train_domains if num_train_domains is not None else backbone_cfg.num_domains
@@ -181,12 +235,15 @@ def build_model_and_tokenizer(
             use_random_projection=cdan_cfg.use_random_projection,
             projection_dim=cdan_cfg.projection_dim,
             entropy_weighting=cdan_cfg.entropy_weighting,
+            task_loss_fn=task_loss_fn,
         )
     else:
+        # source_only, mixed, source_only_focal, mixed_focal
         model = EmotionClassifier(
             backbone=backbone,
             num_labels=backbone_cfg.num_labels,
             head_dropout=backbone_cfg.dropout,
+            loss_fn=task_loss_fn,
         )
     return model, tokenizer
 
@@ -306,11 +363,12 @@ def main() -> int:
     experiment_name = f"{args.method}_{args.protocol}_{target_tag}"
     csv_name = f"{args.method}_{args.protocol}_{target_tag}.csv"
 
-    # For DANN: derive the local domain mapping from the actual train split.
-    # LODO has 2 train domains; Mixed has 3.  The discriminator must be sized
-    # to match so that every output class receives signal and domain_loss stays
-    # near ln(K) instead of exploding toward 10+.
-    if args.method in ("dann", "cdan"):
+    # For adversarial methods: derive the local domain mapping from the actual
+    # train split.  LODO has 2 train domains; Mixed has 3.  The discriminator
+    # must be sized to match so that every output class receives signal and
+    # domain_loss stays near ln(K) instead of exploding toward 10+.
+    _ADVERSARIAL = ("dann", "cdan", "dann_focal", "cdan_focal")
+    if args.method in _ADVERSARIAL:
         unique_domains: List[str] = sorted({e.domain for e in train_examples})
         num_train_domains: int = len(unique_domains)
         domain_to_idx: Dict[str, int] = {d: i for i, d in enumerate(unique_domains)}
@@ -330,7 +388,8 @@ def main() -> int:
         model, tokenizer = build_model_and_tokenizer(
             cfg,
             method=args.method,
-            num_train_domains=num_train_domains if args.method in ("dann", "cdan") else None,
+            num_train_domains=num_train_domains if args.method in _ADVERSARIAL else None,
+            train_examples=train_examples if args.method.endswith("_focal") else None,
         )
 
         trainer = Trainer(
@@ -343,7 +402,7 @@ def main() -> int:
             output_dir=output_dir,
             seed=seed,
             method=args.method,
-            domain_to_idx=domain_to_idx if args.method in ("dann", "cdan") else None,
+            domain_to_idx=domain_to_idx if args.method in _ADVERSARIAL else None,
         )
 
         train_result = trainer.train()
