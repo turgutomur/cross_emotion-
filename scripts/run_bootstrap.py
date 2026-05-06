@@ -378,22 +378,23 @@ def collect_seed_results(
         ckpt = torch.load(ckpt_path, map_location=device)
 
         # Strip loss-function state from the checkpoint before loading.
-        # Focal-loss training registers ``loss_fn.alpha`` (the per-class
-        # weight tensor) inside the model's state_dict. At inference we
-        # only need logits, so we rebuild the model without a focal loss
-        # and discard any ``loss_fn.*`` keys to keep load_state_dict in
-        # strict mode for the actual model weights (encoder, head,
-        # discriminator). Filtering happens here rather than in
-        # _build_bare_model so the same code path serves CE and focal
-        # checkpoints uniformly.
+        # Focal-loss training registers an alpha tensor inside whichever
+        # submodule holds the loss. The naming differs across models:
+        #   * EmotionClassifier uses ``loss_fn`` (public attribute).
+        #   * DANNModel / CDANModel use ``_task_loss_fn`` (private convention).
+        # At inference we only need logits, so we rebuild the model without
+        # a focal loss and discard ANY key whose path contains "loss_fn."
+        # before strict load_state_dict, regardless of prefix. This keeps
+        # the strict-mode contract on actual model weights (encoder, head,
+        # discriminator, projection matrices) intact.
         raw_state = ckpt["model_state"]
         filtered_state = {
-            k: v for k, v in raw_state.items() if not k.startswith("loss_fn.")
+            k: v for k, v in raw_state.items() if "loss_fn." not in k
         }
         dropped = sorted(set(raw_state) - set(filtered_state))
         if dropped:
             logger.debug(
-                f"    Dropping {len(dropped)} loss_fn.* key(s) from "
+                f"    Dropping {len(dropped)} *loss_fn.* key(s) from "
                 f"checkpoint state_dict (inference-only): {dropped}"
             )
         model.load_state_dict(filtered_state, strict=True)
