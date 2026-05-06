@@ -238,12 +238,12 @@ def _run_inference(
 ) -> Tuple[List[int], List[int]]:
     """Run forward pass on test_examples; return (predictions, labels)."""
     from torch.utils.data import DataLoader
-    from src.data.types import EmotionDataset, EmotionCollator
+    from src.data.torch_dataset import EmotionTorchDataset, EmotionCollator
 
     max_length = cfg.get("model", {}).get("max_length", 256)
     batch_size = cfg.get("training", {}).get("batch_size", 16)
 
-    dataset = EmotionDataset(test_examples)
+    dataset = EmotionTorchDataset(test_examples)
     collator = EmotionCollator(tokenizer=tokenizer, max_length=max_length)
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=False, collate_fn=collator)
 
