@@ -376,7 +376,27 @@ def collect_seed_results(
 
         model = _build_bare_model(cfg, method, num_domains, train_examples=None)
         ckpt = torch.load(ckpt_path, map_location=device)
-        model.load_state_dict(ckpt["model_state"])
+
+        # Strip loss-function state from the checkpoint before loading.
+        # Focal-loss training registers ``loss_fn.alpha`` (the per-class
+        # weight tensor) inside the model's state_dict. At inference we
+        # only need logits, so we rebuild the model without a focal loss
+        # and discard any ``loss_fn.*`` keys to keep load_state_dict in
+        # strict mode for the actual model weights (encoder, head,
+        # discriminator). Filtering happens here rather than in
+        # _build_bare_model so the same code path serves CE and focal
+        # checkpoints uniformly.
+        raw_state = ckpt["model_state"]
+        filtered_state = {
+            k: v for k, v in raw_state.items() if not k.startswith("loss_fn.")
+        }
+        dropped = sorted(set(raw_state) - set(filtered_state))
+        if dropped:
+            logger.debug(
+                f"    Dropping {len(dropped)} loss_fn.* key(s) from "
+                f"checkpoint state_dict (inference-only): {dropped}"
+            )
+        model.load_state_dict(filtered_state, strict=True)
         model.to(device)
 
         backbone_cfg = BackboneConfig.from_dict(cfg.get("model", {}))
