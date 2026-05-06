@@ -51,9 +51,9 @@ class TestBootstrap:
     def test_identical_predictions(self):
         y_true = np.array([0, 1, 2, 3, 4, 5] * 50)
         y_pred = np.array([0, 1, 2, 3, 4, 5] * 50)
-        result = paired_bootstrap_test(y_true, y_pred, y_pred, n_resamples=100)
+        result = paired_bootstrap_test(y_pred, y_pred, y_true, n_resamples=100)
         assert result.delta == 0.0
-        assert result.p_value >= 0.4  # should be ~0.5 (no difference)
+        assert result.p_value >= 0.4  # identical systems → p ≈ 1.0
 
     def test_clearly_better_system(self):
         rng = np.random.RandomState(42)
@@ -62,7 +62,7 @@ class TestBootstrap:
         y_pred_a = rng.randint(0, 6, size=n)       # random
         y_pred_b = y_true.copy()                     # perfect
         result = paired_bootstrap_test(
-            y_true, y_pred_a, y_pred_b, n_resamples=500
+            y_pred_a, y_pred_b, y_true, n_resamples=500
         )
         assert result.delta > 0           # B is better
         assert result.significant_005     # should be significant
