@@ -12,8 +12,12 @@ Usage (run on Colab after all training seeds are complete):
 
 What this does
 --------------
-1. Scans output_dir/results/*.csv to discover (method, protocol, target) cells.
-2. For each cell that has >= 3 seeds, loads the trained checkpoints and runs
+1. RECURSIVELY scans output_dir for any */results/*.csv to discover
+   (method, protocol, target) cells. Handles the common case where runs
+   are sharded across sub-directories like cdan_baseline/, focal_baseline/,
+   lambda05/ — each with its own results/ + checkpoints/ pair.
+2. For each cell that has >= 3 seeds, loads the trained checkpoints from
+   the cell's own base directory (NOT a global output_dir) and runs
    inference on the corresponding test set to collect (predictions, labels).
 3. Groups cells by (protocol, target) and compares every pair of methods
    that share the same protocol+target.
@@ -100,35 +104,98 @@ def _parse_csv_filename(stem: str) -> Optional[Tuple[str, str, str]]:
 
 
 def discover_cells(
-    results_dir: Path,
-) -> Dict[Tuple[str, str, str], List[int]]:
-    """Return a mapping of (method, protocol, target) → list of seeds found."""
-    cells: Dict[Tuple[str, str, str], List[int]] = {}
-    if not results_dir.exists():
-        logger.warning(f"Results directory not found: {results_dir}")
-        return cells
+    output_root: Path,
+) -> Tuple[Dict[Tuple[str, str, str], List[int]], Dict[Tuple[str, str, str], Path]]:
+    """Return (cells, cell_to_base_dir).
 
-    for csv_path in sorted(results_dir.glob("*.csv")):
+    Recursively scans output_root for any ``results/*.csv`` files. This
+    handles the common case where training runs were sharded across
+    output sub-directories (e.g. ``cdan_baseline/``, ``focal_baseline/``,
+    ``lambda05/``) and each one wrote results + checkpoints to its own
+    ``{subdir}/results/`` and ``{subdir}/checkpoints/`` pair.
+
+    Returns
+    -------
+    cells:
+        (method, protocol, target) → sorted list of unique seeds found.
+    cell_to_base_dir:
+        (method, protocol, target) → parent of the discovered ``results/``
+        directory.  This is the *experiment base* — the directory that
+        also contains the matching ``checkpoints/`` subtree.  Used by
+        ``collect_seed_results`` to load the right checkpoint files.
+
+    Duplicate CSVs (same cell appearing under multiple subdirs) are
+    merged: the union of seeds is taken, and the base_dir is set to
+    the directory containing the most recent (modification time) CSV
+    so subsequent checkpoint lookups can find the actual files. A
+    warning is logged for each duplicate.
+    """
+    cells: Dict[Tuple[str, str, str], List[int]] = {}
+    cell_to_base: Dict[Tuple[str, str, str], Path] = {}
+    cell_to_mtime: Dict[Tuple[str, str, str], float] = {}
+
+    if not output_root.exists():
+        logger.warning(f"Output root not found: {output_root}")
+        return cells, cell_to_base
+
+    # Match any *.csv that lives directly under a folder named "results".
+    candidates = sorted(output_root.rglob("*.csv"))
+    candidates = [p for p in candidates if p.parent.name == "results"]
+
+    if not candidates:
+        logger.warning(
+            f"No '*/results/*.csv' files found under {output_root}. "
+            "Did you run training with --output-dir pointing into this tree?"
+        )
+        return cells, cell_to_base
+
+    for csv_path in candidates:
         parsed = _parse_csv_filename(csv_path.stem)
         if parsed is None:
             logger.warning(f"Could not parse cell from filename: {csv_path.name} — skipping.")
             continue
         method, protocol, target = parsed
-        seeds: List[int] = []
+        key = (method, protocol, target)
+
+        seeds_in_file: List[int] = []
         try:
             with open(csv_path, newline="", encoding="utf-8") as fh:
                 reader = csv.DictReader(fh)
                 for row in reader:
                     if "seed" in row:
-                        seeds.append(int(row["seed"]))
+                        seeds_in_file.append(int(row["seed"]))
         except Exception as exc:
-            logger.warning(f"Failed to read {csv_path.name}: {exc} — skipping.")
+            logger.warning(f"Failed to read {csv_path}: {exc} — skipping.")
             continue
-        key = (method, protocol, target)
-        cells[key] = seeds
-        logger.info(f"  {method}/{protocol}/{target}: {len(seeds)} seeds {seeds}")
 
-    return cells
+        # Experiment base directory (the parent of `results/`).
+        base_dir = csv_path.parent.parent
+        mtime = csv_path.stat().st_mtime
+
+        if key in cells:
+            # Duplicate: union seeds, keep base_dir of the newer file.
+            existing = set(cells[key])
+            new = set(seeds_in_file)
+            merged = sorted(existing | new)
+            logger.warning(
+                f"  Duplicate CSV for {method}/{protocol}/{target}: "
+                f"{csv_path} — merging seeds (was {sorted(existing)}, "
+                f"adding {sorted(new - existing)})."
+            )
+            cells[key] = merged
+            if mtime > cell_to_mtime[key]:
+                cell_to_base[key] = base_dir
+                cell_to_mtime[key] = mtime
+        else:
+            cells[key] = sorted(set(seeds_in_file))
+            cell_to_base[key] = base_dir
+            cell_to_mtime[key] = mtime
+            logger.info(
+                f"  {method}/{protocol}/{target}: {len(cells[key])} seeds "
+                f"{cells[key]}  (base={base_dir})"
+            )
+
+    return cells, cell_to_base
 
 
 # ---------------------------------------------------------------------------
@@ -272,9 +339,17 @@ def collect_seed_results(
     protocol: str,
     target: str,
     seeds: List[int],
-    output_dir: Path,
+    base_dir: Path,
 ) -> List[Tuple[List[int], List[int]]]:
-    """For each seed, load checkpoint and return (predictions, labels)."""
+    """For each seed, load checkpoint and return (predictions, labels).
+
+    ``base_dir`` is the experiment-base directory (the parent of both
+    ``results/`` and ``checkpoints/`` for THIS cell, as discovered by
+    ``discover_cells``).  We use it instead of a global output_dir so
+    that runs sharded across multiple output sub-directories
+    (cdan_baseline/, focal_baseline/, lambda05/, ...) all resolve to
+    the right checkpoint files.
+    """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     experiment_name = f"{method}_{protocol}_{target}"
 
@@ -291,7 +366,7 @@ def collect_seed_results(
 
     for seed in seeds:
         ckpt_path = (
-            output_dir / "checkpoints" / experiment_name / f"seed_{seed}" / "best.pt"
+            base_dir / "checkpoints" / experiment_name / f"seed_{seed}" / "best.pt"
         )
         if not ckpt_path.exists():
             raise FileNotFoundError(
@@ -331,7 +406,7 @@ def _metric_fn_for(metric: str):
 def run_all_comparisons(
     cfg: Dict[str, Any],
     cells: Dict[Tuple[str, str, str], List[int]],
-    output_dir: Path,
+    cell_to_base: Dict[Tuple[str, str, str], Path],
     metric: str,
     n_resamples: int,
     seed: int,
@@ -371,7 +446,7 @@ def run_all_comparisons(
                     protocol=protocol,
                     target=target,
                     seeds=cells[(method, protocol, target)],
-                    output_dir=output_dir,
+                    base_dir=cell_to_base[(method, protocol, target)],
                 )
             except FileNotFoundError as exc:
                 logger.warning(f"  {method}: {exc} — skipping.")
@@ -463,8 +538,8 @@ def main() -> int:
     with open(args.config, encoding="utf-8") as fh:
         cfg: Dict[str, Any] = yaml.safe_load(fh)
 
-    logger.info(f"Scanning {output_dir / 'results'} for experiment CSVs ...")
-    cells = discover_cells(output_dir / "results")
+    logger.info(f"Recursively scanning {output_dir} for */results/*.csv ...")
+    cells, cell_to_base = discover_cells(output_dir)
     if not cells:
         logger.error("No result CSVs found. Run training first.")
         return 1
@@ -472,7 +547,7 @@ def main() -> int:
     rows = run_all_comparisons(
         cfg=cfg,
         cells=cells,
-        output_dir=output_dir,
+        cell_to_base=cell_to_base,
         metric=args.metric,
         n_resamples=args.n_resamples,
         seed=args.seed,
