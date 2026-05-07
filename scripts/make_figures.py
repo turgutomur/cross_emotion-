@@ -49,8 +49,15 @@ LODO_METHOD_ORDER = [
 ]
 MIXED_METHOD_ORDER = [
     "mixed", "dann", "cdan",
-    "mixed_focal", "dann_focal", "cdan_focal",
+    "source_only_focal", "dann_focal", "cdan_focal",
 ]
+# NB: Mixed-protocol focal training was launched with --method
+# source_only_focal (which trains a CE-only head + focal task loss on the
+# unioned train split). We never created a separate "mixed_focal" method
+# alias because, per CLAUDE.md, the difference between source_only and
+# mixed is the protocol, not the method — the method is always
+# "CE + focal" or "CE only". Accordingly, the Mixed panel in Figure 1
+# pulls the focal column from the source_only_focal/mixed/mixed cell.
 
 METHOD_DISPLAY: Dict[str, str] = {
     "source_only":       "CE",
@@ -172,20 +179,43 @@ def discover_results(output_dir: Path) -> Dict[Tuple[str, str, str], CellData]:
 
 
 def load_pvalues(bootstrap_csv: Path) -> Dict[Tuple[str, str, str, str], float]:
-    """Load pairwise bootstrap p-values. Keys stored in both A→B and B→A directions."""
+    """Load pairwise bootstrap p-values. Keys stored in both A→B and B→A directions.
+
+    Auto-detects the field delimiter (',' or ';') via csv.Sniffer because the
+    bootstrap CSV may have been re-exported from a spreadsheet using a Turkish
+    locale (semicolon as field separator). We also tolerate the n_seeds_insufficient
+    sentinel value that ``run_bootstrap.py`` writes for under-seeded cells.
+    """
     pv: Dict[Tuple[str, str, str, str], float] = {}
     if not bootstrap_csv.exists():
         logger.warning(f"Bootstrap CSV not found: {bootstrap_csv}")
         return pv
     with open(bootstrap_csv, newline="", encoding="utf-8") as fh:
-        for row in csv.DictReader(fh):
-            try:
-                v = float(row["p_value"])
-            except (ValueError, KeyError):
+        sample = fh.read(4096)
+        fh.seek(0)
+        try:
+            dialect = csv.Sniffer().sniff(sample, delimiters=",;\t")
+            delimiter = dialect.delimiter
+        except csv.Error:
+            delimiter = ","
+        reader = csv.DictReader(fh, delimiter=delimiter)
+        for row in reader:
+            raw = row.get("p_value", "")
+            if not raw or raw == "n_seeds_insufficient":
                 continue
-            p, t, ma, mb = row["protocol"], row["target"], row["method_a"], row["method_b"]
+            try:
+                v = float(raw)
+            except (ValueError, TypeError):
+                continue
+            p = row.get("protocol", "")
+            t = row.get("target", "")
+            ma = row.get("method_a", "")
+            mb = row.get("method_b", "")
+            if not (p and t and ma and mb):
+                continue
             pv[(p, t, ma, mb)] = v
             pv[(p, t, mb, ma)] = v  # symmetric storage
+    logger.info(f"Loaded {len(pv) // 2} pairwise p-values from {bootstrap_csv}")
     return pv
 
 
@@ -197,9 +227,13 @@ def fig_main_results_bars(
     figures_dir: Path,
 ) -> None:
     """4-panel grouped bar chart: test macro-F1 per method, per protocol."""
+    # NOTE: do NOT use constrained_layout=True with a manual figure-level
+    # legend at bbox_to_anchor=(0.5, -0.10). On some matplotlib versions
+    # (>=3.6) the combination raises during savefig because the legend
+    # ends up outside the constrained-layout bounding box. We allocate
+    # extra bottom margin manually below.
     fig, axes = plt.subplots(
-        1, 4, figsize=(18, 5), sharey=True,
-        constrained_layout=True,
+        1, 4, figsize=(18, 5.6), sharey=True,
     )
     fig.suptitle(
         "Test Macro-F1 by Method and Protocol",
@@ -292,14 +326,24 @@ def fig_main_results_bars(
             facecolor="lightgray", hatch="///", edgecolor="black",
             label="n < 3 seeds",
         ),
+        # matplotlib's marker parser does not accept the unicode "★"
+        # (BLACK STAR, U+2605) — only its short marker codes do. Use "*"
+        # (ASTERISK / "star" marker) for the legend handle. Bar
+        # annotations elsewhere can still use the unicode glyph as a text
+        # label, since text rendering goes through the font, not the
+        # marker parser.
         plt.Line2D(
-            [0], [0], marker="★", color="black", linestyle="none",
-            markersize=9, label="p < 0.05 vs CE baseline",
+            [0], [0], marker="*", color="black", linestyle="none",
+            markersize=11, label="p < 0.05 vs CE baseline",
         ),
     ]
+    # Reserve space at the bottom for the legend; bbox_to_anchor sits
+    # inside the figure (positive y) rather than below it (negative y) to
+    # avoid clipping during savefig with bbox_inches="tight".
+    fig.subplots_adjust(bottom=0.22, top=0.90, left=0.05, right=0.99, wspace=0.10)
     fig.legend(
         handles=legend_handles, loc="lower center",
-        bbox_to_anchor=(0.5, -0.10), ncol=4,
+        bbox_to_anchor=(0.5, 0.01), ncol=4,
         fontsize=9, frameon=True, framealpha=0.9,
     )
 
