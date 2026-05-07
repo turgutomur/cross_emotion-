@@ -1,0 +1,77 @@
+# configs/large.yaml — DeBERTa-v3-large variant for final validation runs.
+#
+# Used per pre-registered "5 seeds for the final best-two" protocol
+# (CLAUDE.md). Currently scoped to source_only_focal × WASSA LODO,
+# our strongest positive cross-dataset result, to confirm robustness
+# of the +5.1 F1-point gain to backbone scale.
+#
+# Inherits everything else from default.yaml semantically: same data
+# config, same focal hyperparameters, same evaluation settings, same
+# pre-registered seeds. Only the backbone, batch_size (halved for
+# A100/L4 memory), grad_accum (doubled to keep effective batch=32),
+# and encoder_lr (halved — large models converge faster) change.
+
+model:
+  backbone: "microsoft/deberta-v3-large"
+  max_length: 256
+  dropout: 0.1
+  num_labels: 6
+  num_domains: 3
+  pooling: "cls"
+
+training:
+  epochs: 15
+  batch_size: 8                    # halved from base (16) for memory
+  gradient_accumulation: 4         # effective batch_size = 32 (matches base)
+  encoder_lr: 5e-6                 # halved — large converges faster
+  head_lr: 1e-5
+  weight_decay: 0.01
+  warmup_ratio: 0.1
+  early_stopping_patience: 3
+  fp16: true
+
+data:
+  isear_csv: "data/raw/isear.csv"
+  wassa_dir: "data/raw/wassa21/"
+  goemotions_strict_single_ekman: true
+  isear_split_seed: 42
+  isear_train_frac: 0.8
+  isear_val_frac: 0.1
+  min_text_length: 10
+  goemotions_min_text_length: 3
+
+focal:
+  gamma: 2.0
+  alpha: "inverse_frequency"
+  reduction: "mean"
+
+# DANN/CDAN sections kept for completeness; not used by source_only_focal
+# but train.py loads the full config and these blocks are referenced by
+# adversarial methods. Values match default.yaml.
+dann:
+  lambda_max: 0.5
+  annealing: "sigmoid"
+  domain_hidden_dim: 256
+  gamma: 10.0
+
+cdan:
+  lambda_max: 0.5
+  annealing: "sigmoid"
+  domain_hidden_dim: 256
+  use_random_projection: true
+  projection_dim: 1024
+  entropy_weighting: false
+  gamma: 10.0
+
+evaluation:
+  restrict_to_present: true
+
+logging:
+  level: "INFO"
+
+# Pre-registered seeds. The base model uses primary (3 seeds); this
+# large config uses extended (5 seeds) per the "best-two final
+# validation" protocol in CLAUDE.md.
+seeds:
+  primary: [42, 123, 456]
+  extended: [42, 123, 456, 789, 2024]
