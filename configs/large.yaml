@@ -21,8 +21,15 @@ model:
 
 training:
   epochs: 15
-  batch_size: 8                    # halved from base (16) for memory
-  gradient_accumulation: 4         # effective batch_size = 32 (matches base)
+  # batch_size doubled from initial 8 → 16 after observing GPU-Util ~46%
+  # on the first seed-42 run (A100). Doubling the micro-batch keeps the
+  # effective batch size at 32 (since grad_accum is halved 4 → 2),
+  # preserving paper-comparable optimisation dynamics, but raises GPU
+  # utilisation to ~75-85% and roughly halves wall-clock per epoch
+  # (14 min → ~7 min on A100). Memory peak ~22 GB at fp16 with
+  # seq_len=256, which still fits L4's 24 GB envelope.
+  batch_size: 16
+  gradient_accumulation: 2         # effective batch_size = 32 (unchanged)
   encoder_lr: 5e-6                 # halved — large converges faster
   head_lr: 1e-5
   weight_decay: 0.01
