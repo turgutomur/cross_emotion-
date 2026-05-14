@@ -143,6 +143,30 @@ the method-invariance pattern is itself a contribution: it sets a
 realistic floor on what feature-space cross-dataset methods can be
 expected to deliver on heterogeneous emotion corpora.
 
+\paragraph{Why feature alignment cannot bridge the gap.}
+The theoretical machinery underlying DANN and CDAN
+\citep{ben2010theory,ganin2016dann} bounds target error by a
+combination of source error, source-target divergence, and the
+optimal joint error of an idealised hypothesis. When the source and
+target manifolds in feature space are \emph{disjoint} — as is the case
+for GoEmotions-Reddit-comments held out from a training pool of
+ISEAR-self-reports plus WASSA-essays, or for any LODO target whose
+register has no representation in the training pool — the joint-
+error term has no upper bound that adversarial alignment can pull
+down. The discriminator can be trained to perfect domain
+invariance on the \emph{source-source} pair seen during training, but
+this invariance does not extrapolate to a third manifold that the
+training procedure never observed. CDAN's conditional alignment,
+which we hypothesised would help by conditioning on class structure,
+in practice tightens the source-source feature cluster more strongly
+than DANN's marginal alignment, making the source manifold a less
+permissive prior for any target outside it. This is consistent with
+our empirical observation that CDAN matches or slightly underperforms
+DANN on GoEmotions and ISEAR LODO. The method-invariance we report is
+therefore not a failure of \emph{our} adversarial implementations but
+a property of feature-alignment methods in regimes where the target
+manifold lies outside the source manifold's training-time support.
+
 \subsection{Scale: why the DeBERTa-large result is variance, not signal}
 \label{sec:discussion:scale}
 
@@ -155,13 +179,30 @@ larger.
 We attribute the variance increase to the interaction between
 WASSA-21's small target test set ($n = 164$ across six classes,
 median 17 per class) and the larger model's higher capacity. Macro-F1
-on 16-class buckets is sensitive to a small number of misclassifications;
-a high-capacity model can learn fine-grained
-source-domain features that, at some random initializations, generalize
-well to the target and at others do not. Source-validation macro-F1
-remains tightly clustered ($[0.677, 0.683]$, std $0.002$), evidence
-that the variance is downstream of training stability, not training
-itself.
+on per-class buckets of 9--66 examples is sensitive to a single-digit
+number of misclassifications: flipping three predictions on the
+\emph{joy} class alone (9 ground-truth examples) shifts that class's
+per-class F1 by up to 0.18, propagating to a 0.03-point macro swing.
+A high-capacity model can learn fine-grained source-domain features
+that, at some random initializations, generalize well to the target
+and at others do not. Source-validation macro-F1 remains tightly
+clustered ($[0.677, 0.683]$, std $0.002$), evidence that the variance
+is downstream of training stability, not training itself.
+
+\paragraph{Caveat for practitioners.}
+The combination of small target test sets and high-capacity models is
+a known fragility regime in cross-domain transfer
+\citep{ben2010theory}. Our observation suggests that practitioners
+applying focal loss to cross-corpus emotion benchmarks should
+(i)~prefer moderate-capacity backbones when target evaluation sets
+contain fewer than several hundred examples per class,
+(ii)~budget at least five seeds when reporting any
+configuration involving a high-capacity model on such targets, and
+(iii)~report source-validation metrics alongside target-test metrics
+so that the source-overfitting failure mode we identify is visible to
+downstream readers. The DeBERTa-large variance we report is a useful
+data point for setting these defaults; it is not evidence against
+focal loss as a cross-dataset mitigation.
 
 This result does not undermine the base-model contribution but does
 clarify the regime: focal loss helps cross-dataset emotion under

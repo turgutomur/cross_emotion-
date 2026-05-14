@@ -1,22 +1,32 @@
 \section{Introduction}
 \label{sec:intro}
 
-\todo{Motivation paragraph: why cross-dataset emotion matters. ~5 sentences.}
+Emotion classification systems are routinely deployed across domains
+that differ markedly from their training data: a model trained on
+GoEmotions-style social media posts may be reused for analyzing
+customer-service transcripts, mental-health intake forms, or
+narrative essays — each with its own register, length distribution,
+and class frequencies. While within-corpus emotion benchmarks have
+matured rapidly, \emph{cross-dataset} performance under such
+realistic distribution shift has received less systematic attention
+than the prevalence of these deployment scenarios warrants.
 
-Emotion classification has been studied extensively on individual
-corpora, but \emph{cross-dataset} performance under realistic
-deployment — where the training distribution differs from the
-inference distribution — has received less systematic attention.
-Three obstacles compound the difficulty: (i) label-space
-incompatibility across emotion datasets, which forces either
-projection to a shared schema or per-corpus reannotation
-\citep{bostan2018analysis}; (ii) severe and often per-corpus class
-imbalance, including outright missing classes (e.g.\ ISEAR contains no
-\emph{surprise} examples); and (iii) register shift between corpora
-collected from different sources (Reddit comments, self-report
-narratives, empathy essays).
-
-\todo{Problem statement paragraph. Why prior solutions are insufficient. ~5 sentences.}
+Three obstacles compound the difficulty of evaluating
+cross-dataset emotion models. First, \emph{label-space
+incompatibility} across emotion datasets forces either projection to
+a shared schema or per-corpus reannotation
+\citep{bostan2018analysis}; the act of unification itself introduces
+methodological choices that affect every downstream measurement.
+Second, \emph{severe and often per-corpus class imbalance}, including
+outright missing classes (e.g.\ ISEAR contains no
+\emph{surprise} examples), means that majority-class accuracy on
+the source can be misleading about target-class performance. Third,
+\emph{register shift} between corpora collected from different
+sources (Reddit comments, psychology-experiment self-reports,
+empathy-track essays) means that source-domain feature distributions
+may have little overlap with held-out target distributions, a
+condition under which standard domain-adaptation guarantees do not
+hold \citep{ben2010theory}.
 
 The standard answer in the cross-domain literature has been
 domain-adversarial training and its extensions \citep{ganin2016dann,
@@ -28,8 +38,6 @@ emotion has not been systematically tested. Concurrently, focal loss
 across image and text domains, including emotion-specific imbalance
 \citep{suresh2021labelaware}, but not in combination with domain-adversarial
 frameworks on cross-dataset emotion benchmarks.
-
-\todo{Contributions paragraph + finding teasers. ~7 sentences.}
 
 We make three contributions. First, we provide the first systematic
 six-method comparison (CE source-only, mixed-CE, DANN, CDAN, DANN+Focal,
