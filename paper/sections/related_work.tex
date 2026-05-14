@@ -1,0 +1,71 @@
+\section{Related Work}
+\label{sec:related}
+
+Our paper sits at the intersection of three literature threads.
+Cross-corpus emotion analysis has documented label-space
+incompatibility without prescribing adaptation methods.
+Adversarial domain adaptation has been validated on sentiment and
+image tasks but not on cross-dataset emotion.
+Class-imbalance regularization (focal loss) has been applied to
+emotion classification but not combined with adversarial frameworks
+on the cross-dataset benchmark we target.
+
+\paragraph{Cross-corpus emotion analysis.}
+\citet{bostan2018analysis} systematically catalogued the label-space
+incompatibility between emotion datasets, demonstrating that
+projecting heterogeneous corpora to a shared Ekman scheme requires
+either dropping incompatible classes or accepting contested mappings
+(e.g.\ ISEAR's \emph{shame} and \emph{guilt} have no consensus
+projection). Their analysis stops at diagnosis: they do not propose
+methods to adapt models across the resulting heterogeneous splits.
+\citet{demszky2020goemotions} released GoEmotions and reported a
+source-only cross-dataset transfer baseline to ISEAR and EmoInt, but
+did not test domain adaptation methods against this baseline. Our
+work picks up where these two leave off: we adopt the Ekman-6
+projection (excluding shame/guilt per Bostan and Klinger's
+caveat), accept the consequences (ISEAR contributes five classes,
+\emph{surprise} absent), and test six methods including the standard
+cross-domain answer (DANN/CDAN) and the class-imbalance answer
+(focal loss).
+
+\paragraph{Adversarial domain adaptation in NLP.}
+DANN \citep{ganin2016dann} introduced the gradient reversal layer
+and sigmoid $\lambda$ annealing, with primary validation on
+cross-domain sentiment (Amazon product reviews) and image tasks.
+CDAN \citep{long2018cdan} extends DANN by conditioning the
+discriminator on task-head class predictions via a multilinear map,
+demonstrated on image domain adaptation (Office-31, ImageCLEF).
+The multi-domain text classification extension
+\citep{chen2018multinomial} generalizes DANN to more than two source
+domains, again on sentiment. Cross-dataset \emph{emotion} (as opposed
+to sentiment or topic) has not been systematically evaluated under
+these methods in the published literature to the best of our
+knowledge. Our negative results on adversarial methods for this task
+(Section~\ref{sec:results}) connect to the survey-level caveat in
+\citet{wilson2020dasurvey} that domain adaptation does not
+universally transfer across task families.
+
+\paragraph{Class imbalance and focal loss.}
+Focal loss \citep{lin2017focal} reweights the cross-entropy loss to
+down-weight well-classified examples and concentrate gradient on hard
+or rare examples; it was originally proposed for dense object
+detection but has been adapted to imbalanced NLP classification
+\citep{suresh2021labelaware}. In emotion classification specifically,
+class imbalance is pronounced: GoEmotions is dominated by joy and
+admiration; ISEAR has no surprise; WASSA-21 essay distributions skew
+toward sadness. The interaction between focal loss and the
+cross-dataset shift addressed by adversarial methods has not, to our
+knowledge, been published. Our DANN+Focal and CDAN+Focal cells
+(Section~\ref{sec:results}) provide the first such measurement on the
+three-emotion-dataset benchmark.
+
+\paragraph{Position of this work.}
+We do not propose a new method. We provide the first systematic
+empirical comparison of two complementary mitigations — adversarial
+feature alignment and focal-loss class-imbalance regularization —
+on a cross-dataset emotion benchmark with pre-registered protocol and
+seed budgets. Our headline finding (focal alone outperforms all
+adversarial variants on the one target where any method helps) is
+non-obvious from the prior literature and informs the practical
+choice of mitigation for related cross-corpus text classification
+problems.

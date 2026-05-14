@@ -1,0 +1,102 @@
+% ============================================================================
+% Cross-Dataset Emotion Classification Under Distribution Shift
+% EMNLP 2026 ARR May cycle submission (long paper, 8 pages + unlimited appendix)
+%
+% Build:
+%   pdflatex main && bibtex main && pdflatex main && pdflatex main
+% Or with latexmk:
+%   latexmk -pdf main.tex
+%
+% Style files: this template assumes acl_latex.sty + acl_natbib.bst from the
+% official ARR repository: https://github.com/acl-org/acl-style-files
+% Drop those two files into this directory before building.
+% ============================================================================
+
+\documentclass[11pt]{article}
+
+% ACL style — use the May 2026 ARR template
+\usepackage[]{acl_latex}    % comment out if acl_latex.sty not present;
+                            % fallback below uses standard article class
+
+% Standard packages used in our paper
+\usepackage{times}
+\usepackage{latexsym}
+\usepackage{microtype}
+\usepackage{inconsolata}
+
+\usepackage{amsmath, amssymb, amsfonts}
+\usepackage{booktabs}        % for clean tables
+\usepackage{graphicx}        % for \includegraphics
+\usepackage{subcaption}      % for subfigures
+\usepackage{multirow}        % for table cell merging
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage[capitalise]{cleveref}
+
+% Inline TODO macro — visible in PDF but easy to grep before final
+\newcommand{\todo}[1]{\textcolor{red}{\textbf{[TODO: #1]}}}
+\newcommand{\note}[1]{\textcolor{blue}{\textbf{[NOTE: #1]}}}
+
+% Convenience macros for our numbers — change once, propagate everywhere
+\newcommand{\focalwassagain}{+5.15}                % F1 points
+\newcommand{\focalwassap}{0.014}                   % bootstrap p-value
+\newcommand{\focalwassamean}{0.516}                % large-base focal mean
+\newcommand{\focalwassastd}{0.005}                 % large-base focal std
+\newcommand{\cewassamean}{0.464}                   % CE WASSA mean
+\newcommand{\cewassastd}{0.020}                    % CE WASSA std
+\newcommand{\largefocalmean}{0.492}                % large 5-seed mean
+\newcommand{\largefocalstd}{0.029}                 % large 5-seed std
+
+\title{Cross-Dataset Emotion Classification Under Distribution Shift:\\
+       Class Imbalance Dominates Feature Alignment}
+
+% Anonymous for ARR review; de-anonymize on acceptance
+\author{Anonymous Submission}
+
+\begin{document}
+\maketitle
+
+% ---------------------------------------------------------------------------
+% Abstract
+% ---------------------------------------------------------------------------
+\begin{abstract}
+\input{sections/abstract}
+\end{abstract}
+
+% ---------------------------------------------------------------------------
+% Main body
+% ---------------------------------------------------------------------------
+\input{sections/introduction}
+\input{sections/related_work}
+\input{sections/methods}
+\input{sections/experimental_setup}
+\input{sections/results}
+\input{sections/discussion}
+\input{sections/conclusion}
+
+% ---------------------------------------------------------------------------
+% Limitations (required by ARR; not counted against page limit)
+% ---------------------------------------------------------------------------
+\section*{Limitations}
+\input{sections/limitations}
+
+% ---------------------------------------------------------------------------
+% Ethics statement (optional but recommended)
+% ---------------------------------------------------------------------------
+\section*{Ethics Statement}
+\input{sections/ethics}
+
+% ---------------------------------------------------------------------------
+% Bibliography
+% ---------------------------------------------------------------------------
+\bibliography{references}
+\bibliographystyle{acl_natbib}
+
+% ---------------------------------------------------------------------------
+% Appendix (unlimited length, separate from 8-page main)
+% ---------------------------------------------------------------------------
+\clearpage
+\appendix
+\input{sections/appendix}
+
+\end{document}

@@ -1,0 +1,129 @@
+\section{Datasets and Methods}
+\label{sec:methods}
+
+\subsection{Datasets and Ekman-6 mapping}
+\label{sec:methods:data}
+
+We unify three publicly available emotion corpora to a shared
+Ekman-6 label space:
+$\{\text{anger}, \text{disgust}, \text{fear}, \text{joy},
+\text{sadness}, \text{surprise}\}$.
+
+\paragraph{GoEmotions} \citep{demszky2020goemotions}: 58k Reddit
+comments annotated with 27 emotion labels plus neutral. We apply
+Google's official Ekman mapping (27 fine-grained $\rightarrow$ 6
+Ekman). Multi-label examples are retained only when all original
+labels collapse to the same Ekman class
+($\texttt{goemotions\_strict\_single\_ekman}=\text{true}$); examples
+with ambiguous projections are dropped. Neutral examples are
+discarded.
+
+\paragraph{ISEAR} \citep{scherer1994isear}: 7,666 self-report
+narratives across seven categories. We project five categories
+directly to Ekman classes (anger, disgust, fear, joy, sadness) and
+\emph{exclude} \texttt{shame} and \texttt{guilt}. The
+shame-to-sadness mapping is contested in the literature
+\citep{bostan2018analysis} and would introduce labeled noise that
+reviewers could legitimately flag. As a consequence, ISEAR contributes
+five Ekman classes; \emph{surprise} is absent from the dataset
+entirely — a known limitation we report transparently.
+
+\paragraph{WASSA-21} \citep{tafreshi2021wassa}: empathy-track essays
+labeled with Ekman emotions. We use the released training file's
+label distribution directly. The official validation and test files
+are unlabeled in the public release; we therefore fall back to a
+stratified 80/10/10 split of the labeled training file with random
+seed 42. Any \texttt{neutral} rows are dropped.
+
+\paragraph{Label statistics after mapping.}
+\todo{Add summary table: per-dataset class counts after Ekman projection.}
+
+\subsection{Six methods}
+\label{sec:methods:models}
+
+All six methods share a DeBERTa-v3-base encoder
+\citep{he2023deberta} with a first-token pooled representation and a
+single linear classification head. Methods differ in (i) the
+training data sampling strategy and (ii) the loss function applied.
+
+\paragraph{CE source-only.} Cross-entropy loss on the LODO source
+training split (union of two of three datasets); no domain adaptation
+component.
+
+\paragraph{CE mixed.} Cross-entropy loss on the union of all three
+datasets' training splits, evaluated on the union of all three test
+splits (Mixed protocol; Section~\ref{sec:methods:protocols}).
+
+\paragraph{DANN.} Domain-adversarial training
+\citep{ganin2016dann}: a gradient reversal layer connects the encoder
+output to a three-way (or two-way for LODO) domain discriminator.
+The discriminator is a two-layer MLP with hidden dimension 256.
+The reversal scale $\lambda$ follows the sigmoid schedule
+$\lambda(p) = \lambda_{\max} \cdot (2/(1 + e^{-\gamma p}) - 1)$ with
+$\gamma=10$ and training progress $p \in [0, 1]$. We report
+$\lambda_{\max}=0.5$ throughout the main results following an
+ablation (Appendix~\ref{app:lambda}) that established $\lambda_{\max}=1.0$
+causes domain-loss divergence at epoch 3.
+
+\paragraph{CDAN.} Conditional adversarial domain adaptation
+\citep{long2018cdan}: the discriminator input is the multilinear map
+$h \otimes \text{softmax}(g)$ of the backbone features $h$ and task
+softmax probabilities $g$. We use the random-projection variant with
+projection dimension $d=1024$ and fixed random matrices
+$R_f \sim \mathcal{N}(0, 1/\sqrt{d})$, $R_g \sim \mathcal{N}(0, 1/\sqrt{d})$,
+following Section 3.2 of the original paper. Entropy weighting
+(CDAN+E) is disabled by default; ablation in
+Appendix~\ref{app:cdan_e}.
+
+\paragraph{CE + Focal.} Source-only training with focal loss
+\citep{lin2017focal}, $\text{FL}(p_t) = -\alpha_t (1 - p_t)^\gamma
+\log(p_t)$, where $\alpha_t$ is the per-class weight. We set
+$\gamma=2$ and compute $\alpha$ by inverse class frequency on the
+training split, normalized so $\overline{\alpha} = 1$ (no test-set
+leakage). The Mixed-protocol variant of this method, used in our main
+table, replaces the source-only training data with the union train
+split; the loss function and $\alpha$ computation are otherwise
+identical.
+
+\paragraph{DANN + Focal and CDAN + Focal.} The respective adversarial
+methods with focal loss replacing the task-head cross-entropy. The
+domain-loss term remains plain cross-entropy in both variants;
+applying focal to the domain head is not motivated, as domain labels
+are balanced by construction (LODO uses two sources, Mixed uses three).
+
+\subsection{Two protocols}
+\label{sec:methods:protocols}
+
+\paragraph{Mixed.} Train on the union of all three datasets' training
+splits; validate on the union of validation splits; test on the union
+of test splits. Reports both per-dataset and aggregate test macro-F1.
+This protocol does not measure cross-dataset generalization, only
+within-distribution mixed-corpus performance.
+
+\paragraph{Leave-one-dataset-out (LODO).} For each held-out target
+$T \in \{\text{GoEmotions}, \text{ISEAR}, \text{WASSA-21}\}$, train on
+the union of the two non-target datasets' training splits; validate on
+the union of the two non-target datasets' validation splits; test
+\emph{only} on the held-out target's test split. The target's
+training and validation splits are never touched, ensuring genuine
+cross-dataset evaluation.
+
+\subsection{Statistical analysis}
+\label{sec:methods:stats}
+
+We report mean and standard deviation over three random seeds (42, 123,
+456) per cell in the main 6-method $\times$ 4-protocol table. Three
+cells with strong negative seed-42 trends (DANN+Focal and CDAN+Focal
+on the targets where focal-only is also non-positive) are reported with
+$n{=}1$ annotation; these are excluded from significance tests.
+We extend to five seeds (42, 123, 456, 789, 2024) for the
+DeBERTa-v3-large robustness validation
+(Section~\ref{sec:results:large}).
+
+Pairwise significance tests use a paired bootstrap with 1000 resamples
+and a fixed seed of 42. Predictions from each method's three seeds are
+concatenated, and the same resampling indices are applied to both
+methods within each resample to test method-vs-method significance on
+the same test points. We report two-sided $p$-values defined as the
+fraction of resamples whose sign disagrees with the observed mean
+difference.

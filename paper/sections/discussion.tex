@@ -1,0 +1,159 @@
+\section{Discussion}
+\label{sec:discussion}
+
+\subsection{Why focal alone wins: the class-imbalance hypothesis}
+\label{sec:discussion:imbalance}
+
+Our headline result — focal loss in plain source-only training
+outperforms all adversarial methods on WASSA-21 LODO — is consistent
+with a simple but unstated hypothesis: \emph{the dominant cross-dataset
+shift in emotion is class-distribution shift, not feature-distribution
+shift.}
+
+Cross-dataset emotion benchmarks combine corpora with materially
+different class frequencies and, in the case of ISEAR, an outright
+missing class. Adversarial methods (DANN, CDAN) are designed for the
+opposite problem: stabilizing feature representations across domains
+that share the label distribution but differ in input
+characteristics. When the actual problem is that the source domains
+overrepresent certain classes and the held-out target distributes
+labels differently, adversarial alignment cannot help: it would
+require the discriminator to enforce that the source-domain
+representations of "joy" look like the target-domain representations
+of "joy", but the source-domain representations of joy are themselves
+biased toward the source's overrepresented uses of that label (e.g.\
+GoEmotions Reddit positivity vs WASSA empathy essays).
+
+Focal loss directly attacks the class-imbalance problem during
+training: by down-weighting well-classified examples and concentrating
+gradient on rare or hard examples, it produces a classifier less
+biased toward the majority classes of the source training set.
+Section~\ref{sec:results:perclass} provides the per-class evidence:
+focal recovers the two classes (disgust, fear) where CE source-only
+collapses to near-zero recall, at a small expense on a class
+(surprise) where CE was already doing well.
+
+\subsection{Why adversarial + focal does not amplify}
+\label{sec:discussion:combinations}
+
+On WASSA-21 LODO, the three focal-based methods rank as: CE + Focal
+($0.516$) $>$ DANN + Focal ($0.501$) $>$ CDAN + Focal ($0.483$).
+\emph{Adding} an adversarial layer to focal training reduces the
+gain.
+
+Two interpretations are consistent with this pattern. First, the
+gradient capacity is finite: the adversarial loss term competes with
+the focal regularizer for gradient direction. When the dominant
+shift is class-distribution, the adversarial gradient is at best
+neutral and at worst aligned with the source-overrepresented
+classes — pulling the model back toward the very imbalance that
+focal was correcting. Second, adversarial alignment on
+\emph{source-source} pairs (as in our LODO regime, where the
+discriminator sees only two source domains during training) does not
+extrapolate to the held-out target. CDAN, by conditioning the
+discriminator on task-head predictions, tightens this source-source
+alignment further; this is consistent with CDAN's stronger negative
+effect than DANN's in the combinations.
+
+\subsection{Two failure modes for adversarial methods}
+\label{sec:discussion:failure}
+
+We characterize two distinct failure modes in our experiments.
+
+\paragraph{Mode 1 — DANN instability at moderate $\lambda$.}
+At $\lambda_{\max}=1.0$ (the default in \citet{ganin2016dann}),
+domain-loss diverges around epoch 3 of training on all three LODO
+targets. On GoEmotions LODO seed 42, the domain loss rises from 1.7
+to 10+ and never recovers, while task loss
+stays elevated. We mitigated this by halving $\lambda_{\max}$ to
+$0.5$ in the main results, but even at the stabilized value DANN
+does not exceed CE source-only on any LODO target. We provide the
+lambda trajectory in
+Figure~\ref{fig:lambda} and the underlying logs in
+Appendix~\ref{app:lambda}.
+
+\paragraph{Mode 2 — CDAN source-manifold tightening.}
+CDAN training is numerically stable across all LODO targets and seeds,
+unlike DANN. But on GoEmotions LODO — the target with the largest
+register distance from the source training data — CDAN produces test
+macro-F1 essentially indistinguishable from CE
+($0.294 \pm 0.015$ vs $0.300 \pm 0.007$). Source validation reaches
+$0.77$ at the best epoch, but the gap to test ($0.47$ F1 points) is
+the largest of any method-target combination. CDAN's conditional
+alignment tightens the source-source feature manifold; when the
+held-out target lies far outside that manifold, the tightened
+representation does not generalize.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.95\linewidth]{../outputs/figures/dann_lambda_dynamics.pdf}
+\caption{Per-epoch domain loss (right panel) and the sigmoid
+$\lambda$ schedule (left panel) for DANN training on three LODO
+targets at $\lambda_{\max}=1.0$. GoEmotions exhibits unbounded
+domain-loss divergence beginning at epoch 3; ISEAR and WASSA-21
+remain stable. Reducing $\lambda_{\max}$ to $0.5$ stabilizes all
+three targets but does not produce a positive test F1 gain.}
+\label{fig:lambda}
+\end{figure}
+
+\subsection{Two LODO targets are method-invariant}
+\label{sec:discussion:invariant}
+
+On GoEmotions LODO, all six methods produce test macro-F1 in the
+narrow band $[0.290, 0.308]$; on ISEAR LODO, in
+$[0.481, 0.517]$. No pair of methods reaches $p < 0.1$ on either
+target. We interpret this method-invariance structurally rather
+than statistically.
+
+GoEmotions consists of short Reddit comments with sarcasm, slang, and
+context-dependent emotion expression — a register essentially absent
+from the LODO source training pool (ISEAR self-reports plus WASSA
+empathy essays, both long-form first-person reflective text). When
+the held-out target lies entirely outside the source manifold, no
+feature-space adaptation method we tested can recover the target
+distribution, because the source training data provides no signal
+about target-specific features.
+
+ISEAR's structural barrier is different and more severe: the dataset
+contains zero \emph{surprise} examples. A model trained on
+GoEmotions plus WASSA (both of which contain surprise) cannot learn
+the target distribution for that class, because it has no
+target-distribution examples to align to. Macro-F1 on ISEAR is
+therefore computed over five Ekman classes (restrict-to-present), and
+the method's score is bounded by how well it learned the other five
+on training data that overrepresents goemotions-style joy and ISEAR-style
+sadness.
+
+These observations are not weaknesses of our experimental design;
+they are structural facts about the cross-dataset emotion benchmark
+that the field has tolerated implicitly. Our explicit reporting of
+the method-invariance pattern is itself a contribution: it sets a
+realistic floor on what feature-space cross-dataset methods can be
+expected to deliver on heterogeneous emotion corpora.
+
+\subsection{Scale: why the DeBERTa-large result is variance, not signal}
+\label{sec:discussion:scale}
+
+The five-seed DeBERTa-large run on the same cell (CE + Focal $\times$
+WASSA-21 LODO) produces a mean of $0.492$ with standard deviation
+$0.029$, compared to base mean $0.516$ with standard deviation
+$0.005$ at three seeds. Mean trends downward; variance is six times
+larger.
+
+We attribute the variance increase to the interaction between
+WASSA-21's small target test set ($n = 164$ across six classes,
+median 17 per class) and the larger model's higher capacity. Macro-F1
+on 16-class buckets is sensitive to a small number of misclassifications;
+a high-capacity model can learn fine-grained
+source-domain features that, at some random initializations, generalize
+well to the target and at others do not. Source-validation macro-F1
+remains tightly clustered ($[0.677, 0.683]$, std $0.002$), evidence
+that the variance is downstream of training stability, not training
+itself.
+
+This result does not undermine the base-model contribution but does
+clarify the regime: focal loss helps cross-dataset emotion under
+moderate capacity and ample relative test size; with larger capacity
+and small test sets the gain becomes less measurable. We report this
+honestly rather than scaling the seed count until significance is
+recovered.

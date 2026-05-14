@@ -1,0 +1,55 @@
+\section{Full Bootstrap Pairwise Results}
+\label{app:bootstrap}
+
+\todo{Full 60-row pairwise table from outputs/bootstrap/pairwise\_pvalues.csv.
+Include as a longtable spanning multiple pages if needed.}
+
+\section{Lambda Annealing Ablation}
+\label{app:lambda}
+
+\todo{Per-epoch domain\_loss trajectories for DANN at
+$\lambda_{\max} \in \{0.5, 1.0\}$ on the three LODO targets.
+Include early-stop epochs and best val F1 for each.}
+
+\section{CDAN Entropy Weighting (CDAN+E) Ablation}
+\label{app:cdan_e}
+
+\todo{Optional: if compute permits, single-seed CDAN+E run on WASSA-21
+LODO to test whether entropy weighting changes the WASSA result. If
+not run, mark as future work.}
+
+\section{Compute Budget and Wall-Clock}
+\label{app:compute}
+
+\todo{Per-cell wall-clock breakdown:
+- DeBERTa-base on L4: ~5 min/epoch, ~75 min/seed
+- DeBERTa-large on A100: ~7-8 min/epoch (batch=16, accum=2), ~2h/seed
+- Total: ~60 GPU-hours base, ~10 GPU-hours large
+Plot or table.}
+
+\section{Per-Class F1 Breakdown}
+\label{app:perclass}
+
+\todo{Per-class F1 (precision, recall, F1) for CE source-only vs
+CE + Focal on the WASSA-21 LODO test set, all three seeds. Currently
+only seed 42 confusion matrix is in the main results;
+this appendix shows the full breakdown across seeds.}
+
+\section{Hyperparameter Search Notes}
+\label{app:hparam}
+
+\todo{Brief honest account of the hyperparameter choices: which were
+pre-registered vs which were ablated. Specifically:
+- encoder\_lr=1e-5 and head\_lr=2e-5 are pre-registered defaults
+- $\lambda_{\max}=0.5$ was selected via an ablation against
+  $\lambda_{\max}=1.0$ which we report in Appendix~\ref{app:lambda}
+- focal gamma=2.0 is the standard \citet{lin2017focal} default
+- focal alpha=inverse\_frequency was pre-registered (no test-set
+  leakage); other modes (uniform, off) are reserved for ablation
+}
+
+\section{Reproducibility Checklist}
+\label{app:repro}
+
+\todo{ACL reproducibility checklist items — to be filled per the
+required template once submission portal opens.}

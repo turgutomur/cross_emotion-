@@ -1,0 +1,26 @@
+% Ethics statement — short, focused on dataset use and emotion-classifier risks.
+
+Emotion classification raises two ethical concerns that we acknowledge.
+
+First, the three datasets we use (GoEmotions, ISEAR, WASSA-21) were
+collected under different consent regimes and represent different
+populations. GoEmotions sources Reddit comments that, while publicly
+posted, were not collected with explicit ML-research consent. ISEAR
+participants were recruited for psychological research with consent
+appropriate to that purpose. WASSA-21 essays were collected for a
+shared task with task-specific consent. We use all three datasets
+within the terms of their public releases and do not deanonymize
+content.
+
+Second, emotion classifiers deployed cross-corpus risk surfacing
+distribution-shift errors as predictions, with the appearance of
+calibrated confidence. Our paper's central finding — that no method we
+tested closes the validation-to-test gap on two of three LODO targets
+— is itself a caution against deploying single-corpus-trained emotion
+classifiers to held-out populations or genres. We report the gap
+explicitly (Section~\ref{sec:results:gap}) to give practitioners a
+calibrated estimate of cross-dataset error.
+
+We do not release new emotion data with this submission, only model
+configurations and analysis code. The released artifacts pose no
+additional privacy risk beyond what is already in the source corpora.

@@ -1,0 +1,70 @@
+\section{Introduction}
+\label{sec:intro}
+
+\todo{Motivation paragraph: why cross-dataset emotion matters. ~5 sentences.}
+
+Emotion classification has been studied extensively on individual
+corpora, but \emph{cross-dataset} performance under realistic
+deployment — where the training distribution differs from the
+inference distribution — has received less systematic attention.
+Three obstacles compound the difficulty: (i) label-space
+incompatibility across emotion datasets, which forces either
+projection to a shared schema or per-corpus reannotation
+\citep{bostan2018analysis}; (ii) severe and often per-corpus class
+imbalance, including outright missing classes (e.g.\ ISEAR contains no
+\emph{surprise} examples); and (iii) register shift between corpora
+collected from different sources (Reddit comments, self-report
+narratives, empathy essays).
+
+\todo{Problem statement paragraph. Why prior solutions are insufficient. ~5 sentences.}
+
+The standard answer in the cross-domain literature has been
+domain-adversarial training and its extensions \citep{ganin2016dann,
+long2018cdan}. These methods were validated on cross-domain sentiment
+\citep{glorot2011sentiment} and multi-domain text classification
+\citep{chen2018multinomial}, but their transfer to cross-dataset
+emotion has not been systematically tested. Concurrently, focal loss
+\citep{lin2017focal} has been applied to imbalanced classification
+across image and text domains, including emotion-specific imbalance
+\citep{suresh2021labelaware}, but not in combination with domain-adversarial
+frameworks on cross-dataset emotion benchmarks.
+
+\todo{Contributions paragraph + finding teasers. ~7 sentences.}
+
+We make three contributions. First, we provide the first systematic
+six-method comparison (CE source-only, mixed-CE, DANN, CDAN, DANN+Focal,
+CDAN+Focal) on three Ekman-mapped emotion corpora under two
+evaluation protocols (mixed training and leave-one-dataset-out),
+with three to five seeds per cell and paired bootstrap significance
+testing.
+Second, we report a counter-intuitive empirical finding: the simplest
+non-adversarial method — source-only training with focal loss
+replacing cross-entropy — achieves the largest measured cross-dataset
+gain (\focalwassagain{} F1 points on WASSA-21 LODO,
+$p=\focalwassap$). Adding domain-adversarial alignment to focal
+either preserves or reduces this gain, never amplifies it.
+Third, we characterize two distinct failure modes for adversarial
+methods in this regime: DANN exhibits training instability at moderate
+$\lambda$ values (gradient-reversal scale), and CDAN, while stable,
+enforces source-source alignment that does not extrapolate to the
+held-out target. Two of three LODO targets are
+method-invariant: no pair of methods differs significantly on
+GoEmotions LODO or ISEAR LODO.
+
+We argue that the dominant cross-dataset emotion shift is
+\emph{class-distribution shift} (which class frequencies and presence
+differ across corpora), not \emph{feature-distribution shift} (how
+classes are represented), and that this mismatch explains why
+adversarial methods underperform a class-imbalance-aware loss on the
+same task.
+
+\paragraph{Paper organization.}
+Section~\ref{sec:related} surveys the three literature threads that
+motivate our experimental matrix. Section~\ref{sec:methods}
+describes datasets, label mapping, six methods, and two protocols.
+Section~\ref{sec:setup} details hyperparameters and evaluation.
+Section~\ref{sec:results} presents the main results, bootstrap
+significance tests, and the DeBERTa-large robustness validation.
+Section~\ref{sec:discussion} analyzes failure modes and the
+class-imbalance hypothesis. The Limitations section discusses
+single-seed cells, target test-set size, and scope.
