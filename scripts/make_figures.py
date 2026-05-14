@@ -458,6 +458,38 @@ def _parse_dann_log(log_path: Path) -> Tuple[List[int], List[float], List[float]
     return epochs, domain_losses, lambdas
 
 
+def _split_into_runs(
+    epochs: List[int],
+    losses: List[float],
+    lambdas: List[float],
+) -> List[Dict[str, List[float]]]:
+    """Split a concatenated DANN log into separate training runs.
+
+    Trainer log files are opened in append mode, so re-running the same
+    experiment without clearing the log directory produces a single file
+    that contains multiple ``epoch=1, epoch=2, ...`` sequences end-to-end.
+    Plotting such a file naively yields a polyline that "rewinds" from
+    the last epoch of run N back to epoch 1 of run N+1, creating the
+    appearance of a spurious second trajectory.
+
+    We detect a new run by any epoch number that is less than or equal
+    to its predecessor. Returned list elements are dicts with keys
+    ``epochs``, ``losses``, ``lambdas``, each a parallel list of floats.
+    """
+    runs: List[Dict[str, List[float]]] = []
+    current: Dict[str, List[float]] = {"epochs": [], "losses": [], "lambdas": []}
+    for e, l, ld in zip(epochs, losses, lambdas):
+        if current["epochs"] and e <= current["epochs"][-1]:
+            runs.append(current)
+            current = {"epochs": [], "losses": [], "lambdas": []}
+        current["epochs"].append(float(e))
+        current["losses"].append(l)
+        current["lambdas"].append(ld)
+    if current["epochs"]:
+        runs.append(current)
+    return runs
+
+
 def fig_dann_lambda_dynamics(output_dir: Path, figures_dir: Path) -> None:
     """2-panel figure: (A) analytical λ schedule; (B) domain_loss over epochs."""
     fig, (ax_lambda, ax_dloss) = plt.subplots(
@@ -486,16 +518,43 @@ def fig_dann_lambda_dynamics(output_dir: Path, figures_dir: Path) -> None:
     colors_b = ["#E64B35", "#4DBBD5", "#00A087"]
     any_log_found = False
 
+    # Per-target: read the log, split into runs (one log file may contain
+    # multiple concatenated runs from re-runs with the same --output-dir),
+    # and plot the run with the HIGHEST max-lambda. This selects the
+    # original λ_max=1.0 trajectory when both λ=1.0 and λ=0.5 runs are
+    # present, which is the more dramatic failure mode we want to
+    # visualize for the paper's Section 5.3 failure-mode argument.
+    selected_lambda_max: Optional[float] = None
     for target, color in zip(lodo_targets, colors_b):
         experiment_name = f"dann_lodo_{target}"
         log_path = output_dir / "logs" / experiment_name / "seed_42.log"
-        epochs, domain_losses, _ = _parse_dann_log(log_path)
+        epochs, domain_losses, lambdas = _parse_dann_log(log_path)
         if not epochs:
-            logger.warning(f"  No DANN log found: {log_path}")
+            # Fall back to lambda05/ subdir (where some re-runs landed).
+            log_path = output_dir / "lambda05" / "logs" / experiment_name / "seed_42.log"
+            epochs, domain_losses, lambdas = _parse_dann_log(log_path)
+        if not epochs:
+            logger.warning(f"  No DANN log found for {target}: {log_path}")
             continue
         any_log_found = True
+
+        runs = _split_into_runs(epochs, domain_losses, lambdas)
+        if len(runs) > 1:
+            logger.info(
+                f"  {target}: {len(runs)} concatenated runs detected in "
+                f"{log_path}; selecting the highest-λ run for the figure."
+            )
+        # Pick the run whose max lambda is largest (i.e. the most
+        # adversarial-stress configuration). Ties broken by run length.
+        best_run = max(runs, key=lambda r: (max(r["lambdas"]) if r["lambdas"] else 0,
+                                            len(r["epochs"])))
+        run_lambda_max = max(best_run["lambdas"]) if best_run["lambdas"] else 0.0
+        # Round to the nearest 0.5 for the caption-friendly label.
+        rounded = 1.0 if run_lambda_max > 0.8 else 0.5
+        if selected_lambda_max is None:
+            selected_lambda_max = rounded
         ax_dloss.plot(
-            epochs, domain_losses,
+            best_run["epochs"], best_run["losses"],
             color=color, linewidth=2.0, marker="o", markersize=3.5,
             label=target_display[target],
         )
@@ -509,8 +568,12 @@ def fig_dann_lambda_dynamics(output_dir: Path, figures_dir: Path) -> None:
 
     ax_dloss.set_xlabel("Epoch", fontsize=9)
     ax_dloss.set_ylabel("Domain Loss (mean per update step)", fontsize=9)
+    title_suffix = (
+        f" — λ_max={selected_lambda_max:.1f}"
+        if selected_lambda_max is not None else ""
+    )
     ax_dloss.set_title(
-        "(B) Domain Loss — DANN × LODO Targets (seed 42)",
+        f"(B) Domain Loss — DANN × LODO Targets (seed 42){title_suffix}",
         fontsize=10, fontweight="semibold",
     )
     ax_dloss.legend(fontsize=8)
