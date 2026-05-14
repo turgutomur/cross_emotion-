@@ -12,17 +12,29 @@ shift.}
 
 Cross-dataset emotion benchmarks combine corpora with materially
 different class frequencies and, in the case of ISEAR, an outright
-missing class. Adversarial methods (DANN, CDAN) are designed for the
-opposite problem: stabilizing feature representations across domains
-that share the label distribution but differ in input
-characteristics. When the actual problem is that the source domains
-overrepresent certain classes and the held-out target distributes
-labels differently, adversarial alignment cannot help: it would
-require the discriminator to enforce that the source-domain
-representations of "joy" look like the target-domain representations
-of "joy", but the source-domain representations of joy are themselves
-biased toward the source's overrepresented uses of that label (e.g.\
-GoEmotions Reddit positivity vs WASSA empathy essays).
+missing class. Table~\ref{tab:datastats} quantifies the asymmetry:
+GoEmotions is 38:1 imbalanced toward \emph{joy} (19{,}763 examples),
+ISEAR is uniformly balanced across the five Ekman classes it
+contains, and WASSA-21 has \emph{joy} as its \emph{rarest} class
+(99 examples, 5.2\% of the corpus). Under LODO with WASSA-21 as the
+target, the source training pool inverts this entirely: 51\% of
+training examples are labeled joy, while the held-out target has joy
+as its rarest class (9 of 164 examples). This is a textbook example
+of class-distribution shift across domains; it is precisely the
+condition that focal loss \citep{lin2017focal} was designed to
+address.
+
+Adversarial methods (DANN, CDAN) are designed for the opposite
+problem: stabilizing feature representations across domains that
+share the label distribution but differ in input characteristics.
+When the actual problem is that the source domains overrepresent
+certain classes and the held-out target distributes labels
+differently, adversarial alignment cannot help: it would require the
+discriminator to enforce that the source-domain representations of
+"joy" look like the target-domain representations of "joy", but the
+source-domain representations of joy are themselves biased toward
+the source's overrepresented uses of that label (e.g.\ GoEmotions
+Reddit positivity vs WASSA empathy essays).
 
 Focal loss directly attacks the class-imbalance problem during
 training: by down-weighting well-classified examples and concentrating

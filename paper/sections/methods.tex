@@ -36,7 +36,38 @@ stratified 80/10/10 split of the labeled training file with random
 seed 42. Any \texttt{neutral} rows are dropped.
 
 \paragraph{Label statistics after mapping.}
-\todo{Add summary table: per-dataset class counts after Ekman projection.}
+
+Table~\ref{tab:datastats} reports per-class counts after the
+Ekman-6 projection described above. The three corpora exhibit
+dramatically different class distributions, which is central to our
+discussion of cross-dataset shift in Section~\ref{sec:discussion}.
+
+\begin{table*}[t]
+\centering
+\small
+\begin{tabular}{lrrrrrrrr}
+\toprule
+\textbf{Dataset} & \textbf{Total} & \textbf{Anger} & \textbf{Disgust} & \textbf{Fear} & \textbf{Joy} & \textbf{Sadness} & \textbf{Surprise} & \textbf{IR} \\
+\midrule
+GoEmotions & 35{,}170 & 5{,}795 & \phantom{0}663 & \phantom{0}728 & \textbf{19{,}763} & 3{,}031 & 5{,}190 & 38:1 \\
+ISEAR      & \phantom{0}5{,}468 & 1{,}094 & 1{,}093 & 1{,}093 & 1{,}092 & 1{,}096 & ---    & 1:1 \\
+WASSA-21   & \phantom{0}1{,}904 & \phantom{00}419 & \phantom{0}179 & \phantom{0}233 & \phantom{0,0}\textbf{99} & \phantom{0,}777 & \phantom{0,}197 & 8:1 \\
+\bottomrule
+\end{tabular}
+\caption{Per-class counts (train + val + test) after Ekman-6
+projection. IR is the imbalance ratio of the most-to-least frequent
+class. Three observations are central to our analysis: GoEmotions is
+heavily \emph{joy}-dominant (38:1 imbalance), ISEAR is essentially
+balanced by construction (psychology-research methodology), and
+WASSA-21 is sadness-dominant with \emph{joy} as the \emph{rarest}
+class. Under LODO with WASSA-21 as the target, the source training
+pool (GoEmotions + ISEAR) has joy as its most frequent label
+(16{,}682 examples, 51\%), while the WASSA-21 test set has joy as
+its rarest (9 of 164 examples, 5\%) --- a direct class-distribution
+shift that motivates the focal-loss-targets-imbalance hypothesis in
+Section~\ref{sec:discussion:imbalance}.}
+\label{tab:datastats}
+\end{table*}
 
 \subsection{Six methods}
 \label{sec:methods:models}
