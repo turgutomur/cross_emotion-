@@ -20,13 +20,27 @@ projection). Their analysis stops at diagnosis: they do not propose
 methods to adapt models across the resulting heterogeneous splits.
 \citet{demszky2020goemotions} released GoEmotions and reported a
 source-only cross-dataset transfer baseline to ISEAR and EmoInt, but
-did not test domain adaptation methods against this baseline. Our
-work picks up where these two leave off: we adopt the Ekman-6
+did not test domain adaptation methods against this baseline.
+A concurrent line of work proposes unified emotion benchmarks
+spanning multiple corpora: \citet{koufakou2024towards} consolidate
+eleven publicly-available English single-labeled datasets into a
+single benchmark and compare unified-corpus training against
+per-corpus baselines, finding that unified training improves some
+target corpora but degrades others. Their evaluation, however, is
+restricted to a mixed-training protocol against single-corpus
+baselines; they do not adopt a leave-one-dataset-out (LODO)
+protocol, they do not compare domain-adaptation methods, and they do
+not investigate class-imbalance regularization. \citet{plaza2024emotion}
+review the state of emotion analysis in NLP and explicitly identify
+the lack of systematic cross-corpus method comparison as an open
+challenge.
+Our work picks up where these four leave off: we adopt the Ekman-6
 projection (excluding shame/guilt per Bostan and Klinger's
-caveat), accept the consequences (ISEAR contributes five classes,
-\emph{surprise} absent), and test six methods including the standard
-cross-domain answer (DANN/CDAN) and the class-imbalance answer
-(focal loss).
+caveat), evaluate under both mixed-training and LODO protocols, and
+test six methods that span the standard cross-domain answer
+(DANN/CDAN) and the class-imbalance answer (focal loss). The LODO
+protocol exposes a regime that mixed-training cannot — held-out target
+generalization — which is where our headline finding emerges.
 
 \paragraph{Adversarial domain adaptation in NLP.}
 DANN \citep{ganin2016dann} introduced the gradient reversal layer
@@ -51,11 +65,21 @@ down-weight well-classified examples and concentrate gradient on hard
 or rare examples; it was originally proposed for dense object
 detection but has been adapted to imbalanced NLP classification
 \citep{suresh2021labelaware}. In emotion classification specifically,
-class imbalance is pronounced: GoEmotions is dominated by joy and
-admiration; ISEAR has no surprise; WASSA-21 essay distributions skew
-toward sadness. The interaction between focal loss and the
-cross-dataset shift addressed by adversarial methods has not, to our
-knowledge, been published. Our DANN+Focal and CDAN+Focal cells
+class imbalance is pronounced: GoEmotions is dominated by joy;
+ISEAR has no surprise; WASSA-21 essay distributions skew toward
+sadness (see Table~\ref{tab:datastats}). Recent work has applied
+focal loss to imbalanced emotion benchmarks in single-corpus or
+cross-lingual settings: \citet{vazquez2024pcicunam} combine focal
+loss with weighted cross-entropy and a hierarchical classifier on a
+five-language emotion-detection shared task, demonstrating gains over
+plain cross-entropy on individual languages. Their setup, however,
+holds the corpus constant and varies the language; our setup holds
+the language constant (English) and varies the corpus, which is a
+structurally different generalization problem.
+The interaction between focal loss and the cross-dataset shift
+addressed by adversarial methods (DANN+Focal, CDAN+Focal) has not,
+to our knowledge, been published for text emotion classification at
+the cross-corpus level. Our DANN+Focal and CDAN+Focal cells
 (Section~\ref{sec:results}) provide the first such measurement on the
 three-emotion-dataset benchmark.
 
