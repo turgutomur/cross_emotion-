@@ -43,9 +43,20 @@ seed 42. Any \texttt{neutral} rows are dropped.
 \paragraph{Label statistics after mapping.}
 
 Table~\ref{tab:datastats} reports per-class counts after the
-Ekman-6 projection described above. The three corpora exhibit
+Ekman-6 projection described above, and Figure~\ref{fig:classdist}
+visualizes the same counts on a log scale. The three corpora exhibit
 dramatically different class distributions, which is central to our
 discussion of cross-dataset shift in Section~\ref{sec:discussion}.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{../outputs/figures/class_distribution.pdf}
+\caption{Per-class example counts (train + val + test) by dataset
+after Ekman-6 projection, log scale. GoEmotions joy (\textasciitilde20k)
+and WASSA-21 joy (\textasciitilde100) differ by more than two orders
+of magnitude; ISEAR has zero \emph{surprise} examples.}
+\label{fig:classdist}
+\end{figure}
 
 \begin{table*}[t]
 \centering

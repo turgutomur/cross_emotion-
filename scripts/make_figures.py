@@ -791,6 +791,215 @@ def fig_confusion_matrix_wassa(
     _save_figure(fig, figures_dir, "confusion_matrix_wassa")
 
 
+# ─── Figure 5 — class_distribution ────────────────────────────────────────────
+
+def _data_config_from_yaml(config_path: Path) -> "DataConfig":  # type: ignore # noqa: F821
+    """Build a DataConfig from the data: block of a YAML config.
+
+    Shared by Figure 5 (class distribution) so the loader paths stay in
+    sync with the rest of the pipeline. Imported lazily because the data
+    module pulls in pandas, which we do not want to require for the
+    CSV-only figures (1, 2).
+    """
+    import yaml
+    from src.data.builder import DataConfig
+
+    with open(config_path, encoding="utf-8") as fh:
+        cfg: Dict[str, Any] = yaml.safe_load(fh)
+    data_cfg = cfg.get("data", {})
+    return DataConfig(
+        isear_csv=Path(data_cfg.get("isear_csv", "data/raw/isear.csv")),
+        wassa_dir=Path(data_cfg.get("wassa_dir", "data/raw/wassa21/")),
+        goemotions_strict_single_ekman=bool(
+            data_cfg.get("goemotions_strict_single_ekman", True)
+        ),
+        isear_split_seed=int(data_cfg.get("isear_split_seed", 42)),
+        isear_train_frac=float(data_cfg.get("isear_train_frac", 0.8)),
+        isear_val_frac=float(data_cfg.get("isear_val_frac", 0.1)),
+        min_text_length=int(data_cfg.get("min_text_length", 10)),
+        goemotions_min_text_length=int(data_cfg.get("goemotions_min_text_length", 3)),
+    )
+
+
+def fig_class_distribution(config_path: Path, figures_dir: Path) -> None:
+    """Grouped log-scale bar chart of per-class counts across the three datasets.
+
+    Visualises the class-imbalance asymmetry that Table~\\ref{tab:datastats}
+    quantifies: GoEmotions is joy-dominant (38:1), ISEAR is balanced by
+    construction, and WASSA-21 has joy as its rarest class. A log-scale
+    y-axis is necessary because GoEmotions joy (~20k examples) and
+    WASSA-21 joy (~100 examples) span more than two orders of magnitude.
+    Counts aggregate train + val + test per dataset.
+    """
+    from collections import Counter
+    from src.data.builder import build_datasets
+
+    per_domain = build_datasets(_data_config_from_yaml(config_path))
+
+    dataset_display = {
+        "goemotions": "GoEmotions", "isear": "ISEAR", "wassa21": "WASSA-21",
+    }
+    # domain -> Counter of ekman_label over all splits
+    counts: Dict[str, "Counter"] = {}
+    for domain, splits in per_domain.items():
+        c: Counter = Counter()
+        for split_examples in splits.values():
+            for ex in split_examples:
+                c[ex.ekman_label] += 1
+        counts[domain] = c
+
+    fig, ax = plt.subplots(figsize=(9, 4.6))
+    domains = [d for d in ["goemotions", "isear", "wassa21"] if d in counts]
+    n_domains = len(domains)
+    n_classes = len(EKMAN_LABELS)
+    bar_width = 0.8 / max(n_domains, 1)
+    x = np.arange(n_classes)
+    colors = ["#4C72B0", "#DD8452", "#55A868"]
+
+    for di, domain in enumerate(domains):
+        heights = [counts[domain].get(cls, 0) for cls in EKMAN_LABELS]
+        offset = (di - (n_domains - 1) / 2.0) * bar_width
+        bars = ax.bar(
+            x + offset, heights, bar_width,
+            label=dataset_display.get(domain, domain),
+            color=colors[di % len(colors)], alpha=0.88,
+            edgecolor="white", linewidth=0.6,
+        )
+        for b, h in zip(bars, heights):
+            if h > 0:
+                ax.text(
+                    b.get_x() + b.get_width() / 2, h * 1.10, f"{h:,}",
+                    ha="center", va="bottom", fontsize=6, rotation=90,
+                )
+            else:
+                # Mark missing classes (ISEAR has no surprise) explicitly.
+                ax.text(
+                    b.get_x() + b.get_width() / 2, 1.3, "0",
+                    ha="center", va="bottom", fontsize=6, color="gray",
+                )
+
+    ax.set_yscale("log")
+    ax.set_ylim(bottom=1)
+    ax.set_xticks(x)
+    ax.set_xticklabels([c.capitalize() for c in EKMAN_LABELS], fontsize=9)
+    ax.set_ylabel("Example count (train + val + test, log scale)", fontsize=9)
+    ax.set_title(
+        "Per-Class Example Counts by Dataset (Ekman-6 Projection)",
+        fontsize=12, fontweight="bold",
+    )
+    ax.legend(fontsize=9)
+    ax.grid(axis="y", linewidth=0.4, alpha=0.4, linestyle="--")
+    ax.set_axisbelow(True)
+    fig.tight_layout()
+
+    logger.info("Generating Figure 5: class_distribution")
+    _save_figure(fig, figures_dir, "class_distribution")
+
+
+# ─── Figure 6 — perclass_f1_wassa ─────────────────────────────────────────────
+
+def fig_perclass_f1_wassa(
+    output_dir: Path,
+    figures_dir: Path,
+    config_path: Path,
+) -> None:
+    """Grouped bar chart of per-class test F1 on WASSA-21 LODO: CE vs CE+Focal.
+
+    Complements the confusion matrix (Figure 4): where the matrix shows
+    recall, this shows the harmonic-mean F1 per class, making the
+    rare-class recovery (disgust, fear) legible as bar-height
+    differences with explicit per-class deltas. Uses the same seed-42
+    inference path as Figure 4.
+    """
+    from sklearn.metrics import f1_score
+
+    methods = ["source_only", "source_only_focal"]
+    method_display = {
+        "source_only": "CE source-only",
+        "source_only_focal": "CE + Focal",
+    }
+    results: Dict[str, Optional[Tuple[np.ndarray, np.ndarray]]] = {}
+    for method in methods:
+        logger.info(f"  Running WASSA-21 inference for per-class F1: {method}")
+        try:
+            results[method] = _run_wassa_inference(output_dir, method, config_path)
+        except Exception as exc:
+            logger.warning(f"  Inference failed for {method}: {exc}")
+            results[method] = None
+
+    if all(v is None for v in results.values()):
+        logger.warning("Figure 6 skipped: no inference results available.")
+        return
+
+    # Determine present classes from whichever result exists first.
+    present_ids: List[int] = []
+    for method in methods:
+        if results[method] is not None:
+            _, y_true = results[method]
+            present_ids = sorted(np.unique(y_true).tolist())
+            break
+    present_labels = [EKMAN_LABELS[i] for i in present_ids]
+
+    f1_by_method: Dict[str, np.ndarray] = {}
+    for method in methods:
+        if results[method] is None:
+            continue
+        y_pred, y_true = results[method]
+        f1_by_method[method] = f1_score(
+            y_true, y_pred, labels=present_ids, average=None, zero_division=0,
+        )
+
+    fig, ax = plt.subplots(figsize=(9, 4.6))
+    n_classes = len(present_labels)
+    x = np.arange(n_classes)
+    bar_width = 0.38
+    colors = {"source_only": "#4C72B0", "source_only_focal": "#DD8452"}
+
+    for mi, method in enumerate(methods):
+        if method not in f1_by_method:
+            continue
+        offset = (mi - 0.5) * bar_width
+        bars = ax.bar(
+            x + offset, f1_by_method[method], bar_width,
+            label=method_display[method],
+            color=colors[method], alpha=0.88,
+            edgecolor="white", linewidth=0.6,
+        )
+        for b, h in zip(bars, f1_by_method[method]):
+            ax.text(
+                b.get_x() + b.get_width() / 2, h + 0.015, f"{h:.2f}",
+                ha="center", va="bottom", fontsize=7,
+            )
+
+    # Per-class delta annotations below the axis.
+    if all(m in f1_by_method for m in methods):
+        delta = f1_by_method["source_only_focal"] - f1_by_method["source_only"]
+        for i, d in enumerate(delta):
+            sign = "+" if d >= 0 else ""
+            ax.text(
+                i, -0.085, f"{sign}{d:.2f}",
+                ha="center", va="top", fontsize=7.5,
+                color="#00A087" if d > 0 else "#E64B35",
+                transform=ax.get_xaxis_transform(),
+            )
+
+    ax.set_xticks(x)
+    ax.set_xticklabels([c.capitalize() for c in present_labels], fontsize=9)
+    ax.set_ylabel("Per-class test F1", fontsize=9)
+    ax.set_ylim(0, 1.0)
+    ax.set_title(
+        "Per-Class F1 on WASSA-21 Test Set (LODO, seed 42)",
+        fontsize=12, fontweight="bold",
+    )
+    ax.legend(fontsize=9)
+    ax.grid(axis="y", linewidth=0.4, alpha=0.4, linestyle="--")
+    ax.set_axisbelow(True)
+    fig.tight_layout()
+
+    logger.info("Generating Figure 6: perclass_f1_wassa")
+    _save_figure(fig, figures_dir, "perclass_f1_wassa")
+
+
 # ─── CLI ──────────────────────────────────────────────────────────────────────
 
 def parse_args() -> argparse.Namespace:
@@ -873,6 +1082,26 @@ def main() -> int:
             fig_confusion_matrix_wassa(output_dir, figures_dir, config_path)
         except Exception as exc:
             logger.error(f"Figure 4 failed: {exc}", exc_info=True)
+
+    # Figure 5 — class distribution histogram (requires dataset files, no GPU)
+    if not config_path.exists():
+        logger.warning(f"Figure 5 skipped: config not found at {config_path}.")
+    else:
+        try:
+            fig_class_distribution(config_path, figures_dir)
+        except Exception as exc:
+            logger.error(f"Figure 5 failed: {exc}", exc_info=True)
+
+    # Figure 6 — per-class F1 on WASSA-21 (requires checkpoints + GPU)
+    if args.skip_fig4:
+        logger.info("Figure 6 skipped (--skip-fig4; shares inference path with Fig 4).")
+    elif not config_path.exists():
+        logger.warning(f"Figure 6 skipped: config not found at {config_path}.")
+    else:
+        try:
+            fig_perclass_f1_wassa(output_dir, figures_dir, config_path)
+        except Exception as exc:
+            logger.error(f"Figure 6 failed: {exc}", exc_info=True)
 
     logger.info("Done.")
     return 0

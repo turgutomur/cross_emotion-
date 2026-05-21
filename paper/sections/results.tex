@@ -99,8 +99,6 @@ Appendix~\ref{app:bootstrap}.}
 \subsection{Per-class analysis on WASSA-21 LODO}
 \label{sec:results:perclass}
 
-\todo{Refer to confusion matrix figure (outputs/figures/confusion\_matrix\_wassa.pdf).}
-
 Row-normalized confusion matrices on the WASSA-21 test set (seed 42)
 reveal the mechanism of focal loss's gain
 (Figure~\ref{fig:confusion}). CE source-only achieves zero recall on
@@ -109,6 +107,23 @@ and only $0.30$ recall on \emph{fear}. CE + Focal recovers these to
 $0.12$ and $0.45$ respectively, at the cost of a small reduction on
 \emph{surprise} ($0.65 \rightarrow 0.59$). The +5 F1-point macro
 improvement is driven primarily by these two rare-class recoveries.
+
+Figure~\ref{fig:perclassf1} makes the same mechanism explicit in
+terms of per-class F1: the largest bar-height gains for CE + Focal
+over CE source-only are on the rare classes \emph{disgust} and
+\emph{fear}, while the high-frequency classes (\emph{joy},
+\emph{sadness}) are essentially unchanged. This confirms that focal
+loss's contribution is rare-class recovery rather than a uniform
+improvement across the label space.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{../outputs/figures/perclass_f1_wassa.pdf}
+\caption{Per-class test F1 on the WASSA-21 LODO test set (seed 42).
+CE + Focal's gains are concentrated on the rare classes (disgust,
+fear); per-class deltas are annotated below each class.}
+\label{fig:perclassf1}
+\end{figure}
 
 \begin{figure*}[t]
 \centering
