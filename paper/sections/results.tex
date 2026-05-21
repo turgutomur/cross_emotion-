@@ -62,7 +62,11 @@ exceed CE by $1.5$+ standard deviations.
 \label{sec:results:bootstrap}
 
 % ---- Bootstrap p-values table (subset of pairwise_pvalues.csv) ----
-\begin{table}[t]
+% table* (spans both columns): the "Comparison" column holds long
+% method-pair strings that overflow a single \columnwidth, which made
+% the p-value column collide with the adjacent figure. Full text width
+% removes the overflow and matches Tables 1-2, which are also table*.
+\begin{table*}[t]
 \centering
 \small
 \begin{tabular}{llc}
@@ -94,7 +98,7 @@ CDAN vs CE                   & Mixed & 0.246 \\
 42). The complete pairwise table is in
 Appendix~\ref{app:bootstrap}.}
 \label{tab:bootstrap}
-\end{table}
+\end{table*}
 
 \subsection{Per-class analysis on WASSA-21 LODO}
 \label{sec:results:perclass}
