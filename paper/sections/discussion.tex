@@ -126,15 +126,26 @@ feature-space adaptation method we tested can recover the target
 distribution, because the source training data provides no signal
 about target-specific features.
 
-ISEAR's structural barrier is different and more severe: the dataset
-contains zero \emph{surprise} examples. A model trained on
-GoEmotions plus WASSA (both of which contain surprise) cannot learn
-the target distribution for that class, because it has no
-target-distribution examples to align to. Macro-F1 on ISEAR is
-therefore computed over five Ekman classes (restrict-to-present), and
-the method's score is bounded by how well it learned the other five
-on training data that overrepresents goemotions-style joy and ISEAR-style
-sadness.
+ISEAR's method-invariance has a different and, we argue, more
+informative cause. ISEAR is the only class-balanced corpus in our
+benchmark (Table~\ref{tab:datastats}): its test split contains
+approximately 110 examples of each of its five Ekman classes. Focal
+loss's mechanism is the reweighting of a skewed class distribution;
+on a balanced target test set this lever is largely inert. The
+absence of a focal gain on ISEAR LODO ($0.508$ vs CE $0.517$,
+$p = 0.436$) is therefore exactly what our class-imbalance
+hypothesis predicts, not a contradiction of it: where there is no
+imbalance to correct, the class-imbalance method does not help.
+The residual validation-to-test gap on ISEAR (about 20 F1 points)
+is instead attributable to register shift between ISEAR's
+self-report narratives and the Reddit-comment and empathy-essay
+registers of the source pool; as argued above, feature alignment
+cannot close a gap rooted in disjoint manifolds. ISEAR's absent
+\emph{surprise} class is a known limitation of any Ekman-6
+unification, but it does not drive the method-invariance result:
+macro-F1 is computed only over classes present in the target split
+(Section~\ref{sec:setup}), so the five evaluated classes are scored
+on equal footing across all six methods.
 
 These observations are not weaknesses of our experimental design;
 they are structural facts about the cross-dataset emotion benchmark
