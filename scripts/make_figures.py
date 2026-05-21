@@ -879,7 +879,15 @@ def fig_class_distribution(config_path: Path, figures_dir: Path) -> None:
                 )
 
     ax.set_yscale("log")
-    ax.set_ylim(bottom=1)
+    # Headroom: the tallest bar's count label is rotated 90 degrees and
+    # sits above the bar. Without explicit headroom matplotlib places the
+    # axis top just above the largest bar, so the label collides with the
+    # figure title. Extend the top a full decade past the largest count.
+    max_count = max(
+        (counts[d].get(cls, 0) for d in domains for cls in EKMAN_LABELS),
+        default=1,
+    )
+    ax.set_ylim(bottom=1, top=max_count * 10)
     ax.set_xticks(x)
     ax.set_xticklabels([c.capitalize() for c in EKMAN_LABELS], fontsize=9)
     ax.set_ylabel("Example count (train + val + test, log scale)", fontsize=9)
