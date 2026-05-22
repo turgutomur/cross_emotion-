@@ -28,13 +28,12 @@ All configurations are version-controlled in
 \subsection{Compute}
 
 Main experiments run on Kaggle T4 and Google Colab L4 GPUs;
-DeBERTa-large validation uses A100 80GB. Median wall-clock per seed:
-$\approx 5$ minutes per epoch on L4 for the base configuration,
+DeBERTa-large validation uses A100 80GB. Median wall-clock is
+$\approx 5$ minutes per epoch on L4 for the base configuration and
 $\approx 7$--$8$ minutes per epoch on A100 for the large
-configuration (after batch-size optimisation; see
-Appendix~\ref{app:compute}). The full 6-method $\times$ 4-protocol
-matrix at 3 seeds consumed approximately 60 GPU-hours of base-model
-compute; the 5-seed large-model validation added $\sim$10 GPU-hours.
+configuration. The full 6-method $\times$ 4-protocol matrix at 3
+seeds consumed approximately 60 GPU-hours of base-model compute; the
+5-seed large-model validation added $\sim$10 GPU-hours.
 
 \subsection{Evaluation}
 

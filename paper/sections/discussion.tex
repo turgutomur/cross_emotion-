@@ -79,10 +79,9 @@ targets. On GoEmotions LODO seed 42, the domain loss rises from 1.7
 to 10+ and never recovers, while task loss
 stays elevated. We mitigated this by halving $\lambda_{\max}$ to
 $0.5$ in the main results, but even at the stabilized value DANN
-does not exceed CE source-only on any LODO target. We provide the
-lambda trajectory in
-Figure~\ref{fig:lambda} and the underlying logs in
-Appendix~\ref{app:lambda}.
+does not exceed CE source-only on any LODO target. The lambda
+schedule and the per-epoch domain-loss trajectories for both
+$\lambda_{\max}$ settings are shown in Figure~\ref{fig:lambda}.
 
 \paragraph{Mode 2 — CDAN source-manifold tightening.}
 CDAN training is numerically stable across all LODO targets and seeds,

@@ -1,55 +1,59 @@
-\section{Full Bootstrap Pairwise Results}
+\section{Full Pairwise Bootstrap Results}
 \label{app:bootstrap}
 
-\todo{Full 60-row pairwise table from outputs/bootstrap/pairwise\_pvalues.csv.
-Include as a longtable spanning multiple pages if needed.}
+Table~\ref{tab:fullbootstrap} reports every pairwise method comparison
+for which a paired bootstrap test is defined, organized by protocol
+and target. A test is defined only when both methods in the pair have
+three training seeds: predictions are concatenated across the three
+seeds and the same 1000 resampling indices (seed~42) are applied to
+both methods within each resample. Pairs in which either method has a
+single seed --- DANN on all four protocols, and DANN+Focal and
+CDAN+Focal on GoEmotions LODO, ISEAR LODO, and Mixed --- are not
+testable and are omitted; this accounts for the 41 method pairs not
+listed below. The 19 testable comparisons are the complete set
+summarized in Table~\ref{tab:bootstrap} of the main text.
 
-\section{Lambda Annealing Ablation}
-\label{app:lambda}
-
-\todo{Per-epoch domain\_loss trajectories for DANN at
-$\lambda_{\max} \in \{0.5, 1.0\}$ on the three LODO targets.
-Include early-stop epochs and best val F1 for each.}
-
-\section{CDAN Entropy Weighting (CDAN+E) Ablation}
-\label{app:cdan_e}
-
-\todo{Optional: if compute permits, single-seed CDAN+E run on WASSA-21
-LODO to test whether entropy weighting changes the WASSA result. If
-not run, mark as future work.}
-
-\section{Compute Budget and Wall-Clock}
-\label{app:compute}
-
-\todo{Per-cell wall-clock breakdown:
-- DeBERTa-base on L4: ~5 min/epoch, ~75 min/seed
-- DeBERTa-large on A100: ~7-8 min/epoch (batch=16, accum=2), ~2h/seed
-- Total: ~60 GPU-hours base, ~10 GPU-hours large
-Plot or table.}
-
-\section{Per-Class F1 Breakdown}
-\label{app:perclass}
-
-\todo{Per-class F1 (precision, recall, F1) for CE source-only vs
-CE + Focal on the WASSA-21 LODO test set, all three seeds. Currently
-only seed 42 confusion matrix is in the main results;
-this appendix shows the full breakdown across seeds.}
-
-\section{Hyperparameter Search Notes}
-\label{app:hparam}
-
-\todo{Brief honest account of the hyperparameter choices: which were
-pre-registered vs which were ablated. Specifically:
-- encoder\_lr=1e-5 and head\_lr=2e-5 are pre-registered defaults
-- $\lambda_{\max}=0.5$ was selected via an ablation against
-  $\lambda_{\max}=1.0$ which we report in Appendix~\ref{app:lambda}
-- focal gamma=2.0 is the standard \citet{lin2017focal} default
-- focal alpha=inverse\_frequency was pre-registered (no test-set
-  leakage); other modes (uniform, off) are reserved for ablation
-}
-
-\section{Reproducibility Checklist}
-\label{app:repro}
-
-\todo{ACL reproducibility checklist items — to be filled per the
-required template once submission portal opens.}
+\begin{table*}[t]
+\centering
+\small
+\begin{tabular}{llc}
+\toprule
+\textbf{Method A} & \textbf{Method B} & \textbf{p-value} \\
+\midrule
+\multicolumn{3}{l}{\emph{GoEmotions LODO}} \\
+CDAN        & CE          & 0.140 \\
+CDAN        & CE + Focal  & 0.634 \\
+CE          & CE + Focal  & 0.388 \\
+\midrule
+\multicolumn{3}{l}{\emph{ISEAR LODO}} \\
+CDAN        & CE          & 0.716 \\
+CDAN        & CE + Focal  & 0.604 \\
+CE          & CE + Focal  & 0.436 \\
+\midrule
+\multicolumn{3}{l}{\emph{WASSA-21 LODO}} \\
+CE          & CE + Focal     & \textbf{0.014} \\
+CDAN        & CE             & 0.076 \\
+DANN + Focal & CE            & 0.106 \\
+CDAN + Focal & CE + Focal    & 0.134 \\
+CDAN + Focal & CE            & 0.330 \\
+CDAN        & CE + Focal     & 0.342 \\
+CDAN + Focal & DANN + Focal  & 0.398 \\
+DANN + Focal & CE + Focal    & 0.400 \\
+CDAN        & CDAN + Focal   & 0.518 \\
+CDAN        & DANN + Focal   & 0.808 \\
+\midrule
+\multicolumn{3}{l}{\emph{Mixed}} \\
+CE          & CE + Focal  & \textbf{$<$0.001} \\
+CDAN        & CE + Focal  & \textbf{$<$0.001} \\
+CDAN        & CE          & 0.246 \\
+\bottomrule
+\end{tabular}
+\caption{Complete set of testable pairwise paired-bootstrap
+$p$-values (1000 resamples, seed~42), grouped by protocol and target
+and sorted by $p$-value within each group. Bold marks $p < 0.05$. The
+41 untestable pairs (those involving a single-seed method) are omitted
+by construction; see the section text. ``CE'' denotes the
+cross-entropy baseline (source-only under LODO, mixed-corpus under the
+Mixed protocol).}
+\label{tab:fullbootstrap}
+\end{table*}

@@ -109,8 +109,8 @@ The reversal scale $\lambda$ follows the sigmoid schedule
 $\lambda(p) = \lambda_{\max} \cdot (2/(1 + e^{-\gamma p}) - 1)$ with
 $\gamma=10$ and training progress $p \in [0, 1]$. We report
 $\lambda_{\max}=0.5$ throughout the main results following an
-ablation (Appendix~\ref{app:lambda}) that established $\lambda_{\max}=1.0$
-causes domain-loss divergence at epoch 3.
+ablation that established $\lambda_{\max}=1.0$ causes domain-loss
+divergence at epoch~3 (Figure~\ref{fig:lambda}).
 
 \paragraph{CDAN.} Conditional adversarial domain adaptation
 \citep{long2018cdan}: the discriminator input is the multilinear map
@@ -119,8 +119,10 @@ softmax probabilities $g$. We use the random-projection variant with
 projection dimension $d=1024$ and fixed random matrices
 $R_f \sim \mathcal{N}(0, 1/\sqrt{d})$, $R_g \sim \mathcal{N}(0, 1/\sqrt{d})$,
 following Section 3.2 of the original paper. Entropy weighting
-(CDAN+E) is disabled by default; ablation in
-Appendix~\ref{app:cdan_e}.
+(CDAN+E) is disabled by default; we do not ablate it, as our results
+(Section~\ref{sec:results}) show that conditional alignment itself
+does not transfer to the held-out target, which entropy reweighting
+of the same alignment objective would not be expected to change.
 
 \paragraph{CE + Focal.} Source-only training with focal loss
 \citep{lin2017focal}, $\text{FL}(p_t) = -\alpha_t (1 - p_t)^\gamma
