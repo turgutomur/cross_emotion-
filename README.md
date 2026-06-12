@@ -1,65 +1,90 @@
-# Cross-Dataset Emotion Classification
+# Cross-Dataset Emotion Classification under Distribution Shift
 
-Code for the paper *"Cross-Dataset Emotion Classification under Distribution Shift and Class Imbalance"* — targeting EMNLP 2026 (ARR May cycle).
+Senior Design Project (SWE402) — Sakarya University, Department of Software Engineering.
 
-## Research Plan
+**Author:** Ömür Turgut (B211202405)
+**Supervisor:** Prof. Dr. Ahmet ÖZMEN
+**Semester:** 2024–2025 Spring
 
-**Goal.** Unified Ekman-6 emotion classification across three heterogeneous datasets (GoEmotions, ISEAR, WASSA-21), addressing two coupled problems:
-- **Distribution shift** via domain-adversarial training (DANN, CDAN)
-- **Class imbalance** via focal loss variants
+## Project summary
 
-**Evaluation Protocols.**
-- *Protocol A — Mixed*: Train on union of all three datasets, test on held-out mixture.
-- *Protocol B — Leave-One-Dataset-Out (LODO)*: Train on two datasets, test on the third. Three transfer scenarios.
+This project investigates how transformer-based emotion classifiers behave when the test corpus is different from the training corpus. Three publicly available English emotion datasets are unified under the Ekman-6 label space (anger, disgust, fear, joy, sadness, surprise):
 
-**Compared Methods.**
-| # | Method | Domain Adaptation | Loss |
-|---|--------|:-:|:-:|
-| 1 | Source-only | — | CE |
-| 2 | Mixed training | — | CE |
-| 3 | DANN | ✓ | CE |
-| 4 | CDAN | ✓ (conditional) | CE |
-| 5 | DANN + Focal (★) | ✓ | Focal |
-| 6 | CDAN + Focal (★) | ✓ (conditional) | Focal |
+- **GoEmotions** — 58k Reddit comments, 27→6 Ekman projection
+- **ISEAR** — 7.6k self-report narratives, 5 of the 6 Ekman classes (no *surprise*)
+- **WASSA-21** — empathy-track essays, native Ekman-6 labels
 
-★ = our contribution (joint handling of shift + imbalance).
+Six classifiers are compared head-to-head: cross-entropy source-only, cross-entropy mixed, DANN, CDAN, CE + Focal, DANN + Focal, and CDAN + Focal. Two evaluation protocols are used: a Mixed protocol (in-distribution union of all three corpora) and a Leave-One-Dataset-Out (LODO) protocol (train on two corpora, test exclusively on the held-out third). Every cell of the resulting six-method by four-protocol matrix is reported with mean and standard deviation across at least three random seeds, and pairwise significance is tested with a paired bootstrap (1000 resamples, seed 42).
 
-**Rigor.** All configurations run with ≥3 random seeds; best 2 configurations run with 5 seeds. Statistical significance via paired bootstrap (1000 resamples). Results reported as mean ± std with p-values.
+## Main empirical finding
 
-## Compute Budget
+The simplest non-adversarial method — replacing cross-entropy with focal loss in source-only training — produced the largest cross-dataset gain in the matrix: **+5.15 macro-F1 points on WASSA-21 LODO over the cross-entropy baseline (paired bootstrap p = 0.014)**. All adversarial variants and their focal-loss combinations underperformed this baseline. The mechanism analysis indicates that the gain is concentrated on the rare classes (disgust and fear) that cross-entropy systematically misclassifies, exactly the regime in which focal loss is designed to help.
 
-- **Primary**: Kaggle free tier (~30 hr/week T4) → ~165 hr over 5.5 weeks
-- **Secondary**: Colab Pro (~150 CU total for L4/A100 runs)
-- **Backbone**: DeBERTa-v3-base (184M) for main experiments; -large for final validation only
-
-## Timeline (EMNLP 2026 ARR May 25 deadline)
-
-- Week 1: Project scaffold, data loaders, Ekman-6 mapping, LODO splits, sanity check
-- Week 2: Source-only + Mixed baselines (3 seeds, Protocol A + B)
-- Week 3: DANN + CDAN implementations
-- Week 4: Focal loss integration, full LODO matrix
-- Week 5: DeBERTa-large validation, statistical tests, visualizations
-- Week 6-7: Paper writing
-
-## Directory Layout
+## Repository layout
 
 ```
 cross_emotion/
-├── configs/              # YAML configs per experiment
+├── configs/              YAML configuration files per experiment
 ├── src/
-│   ├── data/            # Dataset loaders, Ekman mapping, LODO splits
-│   ├── models/          # Backbone, DANN, CDAN architectures
-│   ├── training/        # Trainer, loss functions
-│   ├── evaluation/      # Metrics, bootstrap significance tests
-│   └── utils/           # Seed control, logging
-├── scripts/              # Entry points
-├── tests/                # Unit tests for data integrity
-├── notebooks/            # Analysis, visualizations
-└── outputs/              # Logs, checkpoints, result CSVs
+│   ├── data/             Dataset loaders, Ekman-6 mapping, LODO/Mixed split builders
+│   ├── models/           DeBERTa-v3-base backbone, classification head, DANN, CDAN
+│   ├── training/         Trainer, focal loss, optimiser scheduling, early stopping
+│   ├── evaluation/       Per-class and macro metrics, paired bootstrap significance
+│   └── utils/            Seed control, logging
+├── scripts/              Entry points (sanity_check.py, train.py, run_bootstrap.py)
+├── tests/                Unit tests for data integrity and label mapping
+├── notebooks/            Analysis and visualisation notebooks
+└── outputs/              Experiment artefacts (gitignored — generated by training runs)
 ```
 
-## Known Limitations (pre-registered)
+## Datasets
 
-- **ISEAR has no `surprise` class.** In LODO with ISEAR as target, surprise F1 is undefined; reported separately.
-- **GoEmotions originally multi-label.** We use only single-labeled instances or multi-labeled ones whose labels collapse to a single Ekman-6 class.
-- **Shame/guilt (ISEAR) excluded** rather than mapped to sadness (avoids contested mapping).
+Raw datasets are **not** included in this repository — they must be obtained from their original sources and placed under `data/raw/`:
+
+- GoEmotions: https://github.com/google-research/google-research/tree/master/goemotions
+- ISEAR: https://www.unige.ch/cisa/research/materials-and-online-research/research-material/
+- WASSA-21: https://competitions.codalab.org/competitions/28713
+
+## How to reproduce
+
+```bash
+# Set up environment
+python -m venv venv
+source venv/bin/activate          # or venv\Scripts\activate on Windows
+pip install -r requirements.txt
+
+# Verify data pipeline
+python scripts/sanity_check.py
+
+# Run the unit tests
+pytest tests/ -v
+
+# Train a single method on a single protocol
+python scripts/train.py --config configs/default.yaml \
+                       --method ce_focal \
+                       --protocol lodo \
+                       --target wassa21 \
+                       --seed 42
+
+# Run paired bootstrap significance tests over the result CSVs
+python scripts/run_bootstrap.py --results-dir outputs/results/
+```
+
+## Hardware and budget
+
+Main experiments use DeBERTa-v3-base (184M parameters) on a single T4 or L4 GPU. A DeBERTa-v3-large robustness check is included as a single-cell validation, executed on an A100. Training defaults: effective batch size 32 (16 × 2 gradient accumulation), sequence length 256, FP16 mixed precision, AdamW with linear warmup and decay, encoder learning rate 1e-5, head learning rate 2e-5, weight decay 0.01, 15 epochs with early stopping on aggregate validation macro-F1 (patience 3).
+
+## Pre-registered limitations
+
+- ISEAR contains no *surprise* examples by construction; results for that class on ISEAR LODO are undefined and macro-F1 is computed over the five present classes.
+- The official WASSA-21 validation and test files are unlabeled in the public release, so an internal stratified 80/10/10 split of the labelled training file with a fixed random seed is used. Internal comparisons are therefore consistent but not directly comparable to other papers that may have used the WASSA-21 evaluation server with held-out labels.
+- The *shame* and *guilt* categories of ISEAR are excluded rather than mapped to *sadness*, because the shame-to-sadness mapping is contested in the literature and would introduce labelled noise. This is a deliberate choice and is documented in the thesis.
+- Three single-seed cells in the main matrix (DANN + Focal and CDAN + Focal on certain protocols) are excluded from the paired-bootstrap significance tests. The honest asymmetry is acknowledged in the thesis.
+
+## Thesis report
+
+The full senior design project report (SWE402 standard format) is delivered separately as a PDF.
+
+## License
+
+Code is released for academic and educational purposes as part of the senior design project requirements.
