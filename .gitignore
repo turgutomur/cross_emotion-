@@ -33,3 +33,15 @@ Thumbs.db
 .env
 venv/
 .venv/
+ 
+# Internal / paper / AI assistant files (kept locally, not pushed)
+CLAUDE.md
+paper/
+docs/
+.claude/
+cross_emotion_emnlp2026/
+demo/
+venv_demo/
+README_for_github.md
+gitignore_additions.txt
+github_cleanup_commands.txt
